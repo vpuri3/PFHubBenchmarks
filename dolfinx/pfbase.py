@@ -1,9 +1,15 @@
 #
-from dolfin import *
-from mpi4py import MPI as pyMPI
-import time
-
 import numpy as np
+
+import ufl
+from ufl import ds, dx, grad, inner, dot
+from ufl import sin, cos, tan, exp
+
+import dolfinx
+from dolfinx import fem, io, mesh, plot
+
+from mpi4py import MPI
+from petsc4py.PETSc import ScalarType
 
 #######################################################################
 # Sub domain for Periodic boundary condition

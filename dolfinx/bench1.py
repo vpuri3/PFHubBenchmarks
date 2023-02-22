@@ -116,6 +116,8 @@ bcs = [] # noflux bc
 
 problem = NonlinearProblem(F, w, bcs)#, J = J)
 solver = NewtonSolver(MPI.COMM_WORLD, problem)
+
+# https://fenicsproject.discourse.group/t/snes-solver-fails-when-using-the-line-search-in-fenicsx/7505/9
 #solver = SNES(MPI.COMM_WORLD, problem)
 
 solver.convergence_criterion = "incremental" # 'residual'
@@ -126,10 +128,10 @@ solver.error_on_nonconvergence = False
 
 ksp  = solver.krylov_solver
 opts = PETSc.Options()
-ksp_pfx  = ksp.getOptionsPrefix()
-opts[f"{ksp_pfx}ksp_type"] = "preonly"
-opts[f"{ksp_pfx}pc_type"]  = "lu"
-opts[f"{ksp_pfx}pc_factor_mat_solver_type"]  = "mumps"
+pfx  = ksp.getOptionsPrefix()
+opts[f"{pfx}ksp_type"] = "preonly"
+opts[f"{pfx}pc_type"]  = "lu"
+opts[f"{pfx}pc_factor_mat_solver_type"]  = "mumps"
 ksp.setFromOptions()
 
 #petsc_options = {

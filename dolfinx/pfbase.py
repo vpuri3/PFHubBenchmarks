@@ -12,174 +12,9 @@ from mpi4py import MPI
 from petsc4py.PETSc import ScalarType
 
 #######################################################################
-# Sub domain for Periodic boundary condition
-#######################################################################
-class PeriodicBoundary(SubDomain):
-    def __init__(self, Lx, Ly, *args, **kwargs):
-        super.__init__(*args, **kwargs)
-        self.Lx = Lx
-        self.Ly = Ly
-    # Left and bottom boundaries are "target domain" G
-    def inside(self, x, on_boundary):
-        # return True if on left or bottom boundaries
-        # return bool((near(x[0], 0) or near(x[1], 0))  and on_boundary)
-        # return True if on left or bottom boundary AND NOT on one of the two corners (0, 1) and (1, 0)
-        return bool((near(x[0], 0) or near(x[1], 0)) and 
-                (not ((near(x[0], 0) and near(x[1], self.Ly)) or 
-                        (near(x[0], self.Lx) and near(x[1], 0)))) and on_boundary)
-    # Map top and right boundaries (H) to bottom and left boundaries (G)
-    def map(self, x, y):
-        # map top right corner
-        if near(x[0], self.Lx) and near(x[1], self.Ly):
-            y[0] = x[0] - self.Lx
-            y[1] = x[1] - self.Ly
-        # map right edge
-        elif near(x[0], self.Lx):
-            y[0] = x[0] - self.Lx
-            y[1] = x[1]
-        # map top edge
-        else:
-            y[0] = x[0]
-            y[1] = x[1] - self.Ly
-
-#######################################################################
-# Parallel Evaluation
-# https://fenicsproject.discourse.group/t/problem-with-evaluation-at-a-point-in-parallel/1188/5
-#######################################################################
-def mpi4py_comm(comm):
-    ''' get mpi4py communicator '''
-    try:
-        return comm.tompi4py()
-    except AttributeError:
-        return comm
-
-def peval(f, x):
-    ''' parallel synced eval '''
-    try:
-        yloc = f(x)
-    except RuntimeError:
-        yloc = np.inf * np.ones(f.value_shape())
-
-    yloc = np.array([yloc])
-    yglo = np.zeros_like(yloc)
-
-    comm = mpi4py_comm(f.function_space().mesh().mpi_comm())
-    comm.Allreduce(yloc, yglo, op=pyMPI.MIN)
-
-    return yglo
-
-#######################################################################
-# Interpolation
-#######################################################################
-
-def sample(u, Nx, Ny, Lx, Ly):
-    '''
-    return array of size [Nx], [Ny] [Nx, Ny]
-    '''
-
-    if MPI.comm_world.rank == 0:
-        print(f'Sampling field - {Nx * Ny} points')
-
-    tt = time.time()
-
-    xs = np.linspace(0, Lx, Nx)
-    ys = np.linspace(0, Ly, Ny)
-
-    us = np.zeros((Nx, Ny))
-
-    for j in range(Ny):
-        y = ys[j]
-        for i in range(Nx):
-            x = xs[i]
-            us[i,j] = peval(u, np.array([x,y]))
-
-    tt = time.time() - tt
-    if MPI.comm_world.rank == 0:
-        print(f'Sampling done - time taken: {tt}')
-
-    return xs, ys, us
-
-#
-# below methods dont do well in parallel
-#
-# https://fenicsproject.discourse.group/t/integrate-over-some-but-not-all-dimensions/5201/9
-#
-
-class UxExpression(UserExpression):
-    """
-    u(x) = u(x, y=ypos)
-    """
-    def __init__(self, u2d, ypos):
-        super().__init__(xpos)
-        self.u2d  = u2d
-        self.ypos = ypos
-
-        self.point = np.array([0.,0.])
-
-    def eval(self, values, x):
-        self.point[0] = x[0]
-        self.point[1] = self.xpos
-
-        values[0] = peval(self.u2d, self.point)
-
-    def value_shape(self):
-        return ()
-
-class UyExpression(UserExpression):
-    """
-    u(y) = u(x=xpos, y)
-    """
-    def __init__(self, u2d, xpos):
-        super().__init__(xpos)
-        self.u2d  = u2d
-        self.xpos = xpos
-
-        self.point = np.array([0.,0.])
-
-    def eval(self, values, x):
-        self.point[0] = self.xpos
-        self.point[1] = x[0]
-
-        values[0] = peval(self.u2d, self.point)
-
-    def value_shape(self):
-        return ()
-
-class UdxExpression(UserExpression):
-    """
-    U(y) = \int_0^Lx u(x,y) dx
-    """
-    def __init__(self, u2d, V1d):
-        super().__init__()
-        self.u2d = u2d
-        self.V1d = V1d
-
-    def eval(self, values, x):
-        Ux = interpolate(UxExpression(self.u2d, x[0]), self.V1d)
-        values[0] = assemble(Uy * dx)
-
-    def value_shape(self):
-        return ()
-
-class UdyExpression(UserExpression):
-    """
-    U(x) = \int_0^Ly u(x,y) dy
-    """
-    def __init__(self, u2d, V1d):
-        super().__init__()
-        self.u2d = u2d
-        self.V1d = V1d
-
-    def eval(self, values, x):
-        Uy = interpolate(UyExpression(self.u2d, x[0]), self.V1d)
-        values[0] = assemble(Uy * dx)
-
-    def value_shape(self):
-        return ()
-
-#######################################################################
 # Initial Conditions
 #######################################################################
+"""
 class InitialConditionsBench1(UserExpression):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -343,7 +178,6 @@ class InitialConditionsBench6(UserExpression):
 
     def value_shape(self):
         return (3,)
-
 class LangevinNoise(UserExpression):
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
@@ -360,7 +194,15 @@ class LangevinNoise(UserExpression):
 
     def value_shape(self):
         return (3,)
+"""
 
+#######################################################################
+# time loop
+#######################################################################
+# use lambdas for postprocessing functions
+# with default values
+def time_loop(w, w0, dt, dt_min):
+    return w
 #######################################################################
 # weak forms
 #######################################################################

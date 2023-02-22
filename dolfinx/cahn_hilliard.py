@@ -23,14 +23,14 @@ from dolfinx import io, plot
 Solve Cahn-Hilliard Equation
 
   d/dt c = \div(M \grad(mu))
-      mu = f'(c) - lambda * Delta c
+      mu = f'(c) - kappa * Delta c
 
   on \Omega = [0, 1]^2
   n \cdot \grad  c = 0 on \partial\Omega
   n \cdot \grad mu = 0 on \partial\Omega
 
 f = 100 * c^2 * (1-c)^2
-lambda = 1e-2
+kappa = 1e-2
 M = 1.0
 """
 
@@ -48,7 +48,6 @@ msh = mesh.create_rectangle(comm = MPI.COMM_WORLD,
 
 P1 = ufl.FiniteElement("Lagrange", msh.ufl_cell(), 1)
 W  = FunctionSpace(msh, P1 * P1)
-
 x  = ufl.SpatialCoordinate(msh)
 
 c , mu  = w  = Function(W)
@@ -148,4 +147,5 @@ while (float(t) < float(T)):
     c, mu = w.sub(0), w.sub(1)
     file.write_function(c, t)
 
+file.close()
 #

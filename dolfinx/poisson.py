@@ -76,6 +76,7 @@ uh = problem.solve()
 file = io.XDMFFile(msh.comm, "out_poisson/poisson.xdmf", "w")
 file.write_mesh(msh)
 file.write_function(uh)
+file.close()
 
 #cells, types, x = plot.create_vtk_mesh(V)
 #grid = pyvista.UnstructuredGrid(cells, types, x)

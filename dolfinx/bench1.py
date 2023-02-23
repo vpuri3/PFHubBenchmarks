@@ -129,14 +129,18 @@ solver.error_on_nonconvergence = False
 ksp  = solver.krylov_solver
 opts = PETSc.Options()
 pfx  = ksp.getOptionsPrefix()
-opts[f"{pfx}ksp_type"] = "preonly"
-opts[f"{pfx}pc_type"]  = "lu"
+
+opts[f"{pfx}ksp_type"] = "gmres" # "cg", "bicgstab"
+opts[f"{pfx}pc_type"]  = "sor"   # "lu"
+
 opts[f"{pfx}pc_factor_mat_solver_type"]  = "mumps"
+
 ksp.setFromOptions()
 
 #petsc_options = {
-#    "ksp_type" : "preonly",
-#    "pc_type" : "lu",
+#    "ksp_type" : "gmres",
+#    "pc_type" : "sor",
+#    "ksp_max_it": 1000,
 #    }
 
 #nlparams['report'] = True

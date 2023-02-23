@@ -65,9 +65,13 @@ L = inner(f, v) * dx + inner(g, v) * ds
 
 # solve
 petsc_options = {
-    "ksp_type" : "preonly",
-    "pc_type" : "lu",
+    "ksp_type" : "gmres",
+    "pc_type" : "sor",
     }
+#petsc_options = {
+#    "ksp_type" : "preonly",
+#    "pc_type" : "lu",
+#    }
 
 problem = fem.petsc.LinearProblem(a, L, bcs = bcs, petsc_options = petsc_options)
 uh = problem.solve()

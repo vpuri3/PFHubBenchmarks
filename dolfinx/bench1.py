@@ -53,6 +53,7 @@ msh = mesh.create_rectangle(comm = MPI.COMM_WORLD,
 # Model Setup - need
 #   dt, w, w0, F, J, bcs
 ###################################
+t  = Constant(msh, 0.0)
 dt = Constant(msh, 1e-1)
 
 # parameters
@@ -111,8 +112,6 @@ bcs = [] # noflux bc
 ###################################
 # Nonlinear solver setup
 ###################################
-
-#dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
 problem = NonlinearProblem(F, w, bcs)#, J = J)
 solver = NewtonSolver(MPI.COMM_WORLD, problem)
@@ -174,10 +173,10 @@ ksp.setFromOptions()
 ###################################
 # analysis setup
 ###################################
-#file = io.XDMFFile(MPI.COMM_WORLD, "bench1/out.xdmf", "w")
-#file.write_mesh(msh)
-#
-#file.write_function(c, t)
+file = io.XDMFFile(MPI.COMM_WORLD, "bench1/out.xdmf", "w")
+file.write_mesh(msh)
+
+file.write_function(c, t)
 
 def total_solute(c):
     val = c * dx
@@ -191,11 +190,10 @@ def total_free_energy(f_chem, kappa, c):
 # time integration
 ###################################
 
-t = Constant(msh, 0.0)
 tprev = 0.0
 
 benchmark_output = []
-end_time = Constant(msh, 1e3) # 1e6
+end_time = Constant(msh, 1e5) # 1e6
 iteration_count = 0
 dt_min = 1e-2
 dt.value = 1e-1
@@ -245,7 +243,7 @@ while float(t) < float(end_time):
     ############
     c, mu = w.sub(0), w.sub(1)
 
-    #file.write_function(c, t)
+    file.write_function(c, t)
 
     F_total = total_free_energy(f_chem, kappa, c)
     C_total = total_solute(c)
@@ -258,7 +256,7 @@ if MPI.COMM_WORLD.rank == 0:
 else:
     pass
 
-#file.close()
+file.close()
 ####################################
 ## post process
 ####################################

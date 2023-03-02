@@ -3,8 +3,9 @@ import numpy as np
 import time
 
 import ufl
+from ufl import TestFunction
 from ufl import ds, dx, grad, inner, dot, variable, diff, derivative
-from ufl import sin, cos, tan, log, exp
+from ufl import sin, cos, tan, log, exp, pi
 
 import dolfinx
 from dolfinx import fem, mesh
@@ -53,6 +54,7 @@ msh = mesh.create_rectangle(comm = MPI.COMM_WORLD,
 # Model Setup - need
 #   dt, w, w0, F, J, bcs
 ###################################
+
 t  = Constant(msh, 0.0)
 dt = Constant(msh, 1e-1)
 
@@ -71,7 +73,7 @@ x  = ufl.SpatialCoordinate(msh)
 w  = Function(W)
 w0 = Function(W)
 w_ = ufl.TestFunction(W)
-dw = ufl.TestFunction(W)
+#dw = ufl.TrialFunction(W)
 
 c , mu  = w.sub(0),  w.sub(1)
 c0, mu0 = w0.sub(0), w0.sub(1)
@@ -100,12 +102,15 @@ w0.interpolate(w)
 w.x.scatter_forward()
 w0.x.scatter_forward()
 
-# Free Energy
+# weak form
 _c = variable(c)
 f_chem = rho_s * (_c - c_alpha)**2 * (c_beta - _c)**2
 dfdc = diff(f_chem, _c)
 
 F = cahn_hilliard_weak_form(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
+#F = poisson(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
+
+
 J = derivative(F, w, dw)
 bcs = [] # noflux bc
 
@@ -193,7 +198,7 @@ def total_free_energy(f_chem, kappa, c):
 tprev = 0.0
 
 benchmark_output = []
-end_time = Constant(msh, 1e5) # 1e6
+end_time = Constant(msh, 1e3) # 1e6
 iteration_count = 0
 dt_min = 1e-2
 dt.value = 1e-1

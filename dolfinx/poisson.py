@@ -2,16 +2,24 @@
 import numpy as np
 
 import ufl
-from ufl import ds, dx, grad, inner, dot
-from ufl import sin, cos, tan, exp
+from ufl import ds, dx, grad, inner, dot, variable, diff, derivative
+from ufl import sin, cos, tan, log, exp, pi
 
 import dolfinx
 from dolfinx import fem, io, mesh, plot
+from dolfinx.fem import Function, FunctionSpace, Constant
+
+from dolfinx.fem.petsc import LinearProblem, NonlinearProblem
+from dolfinx.nls.petsc import NewtonSolver
 
 from mpi4py import MPI
+from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
 #import pyvista
+
+# local
+from pfbase import *
 
 """
 Solve Poisson equation
@@ -53,43 +61,69 @@ bcs = [
        ]
 
 # equation
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
 x = ufl.SpatialCoordinate(msh)
 
-f = 10 * exp(-((x[0]-0.5)**2 + (x[1] - 0.5)**2) / 0.02 )
+f = 10 * exp(-((x[0]-0.5)**2 + (x[1] - 0.5)**2) / 0.02)
 g = sin(5 * x[0])
 
-a = inner(grad(u), grad(v)) * dx
-L = inner(f, v) * dx + inner(g, v) * ds
+#f = Constant(msh, 1.0)
+#g = Constant(msh, 0.0)
 
-# solve
-petsc_options = {
-    "ksp_type" : "gmres",
-    "pc_type" : "sor",
-    }
+#############
+# LinearProblem
+#############
+#u = ufl.TrialFunction(V)
+#v = ufl.TestFunction(V)
+#
+#a = inner(grad(u), grad(v)) * dx
+#L = inner(f, v) * dx + inner(g, v) * ds
+#
+## solve
 #petsc_options = {
-#    "ksp_type" : "preonly",
-#    "pc_type" : "lu",
+#    "ksp_type" : "gmres",
+#    "pc_type" : "sor",
 #    }
+#
+#problem = fem.petsc.LinearProblem(a, L, bcs = bcs, petsc_options = petsc_options)
+#uh = problem.solve()
+#############
 
-problem = fem.petsc.LinearProblem(a, L, bcs = bcs, petsc_options = petsc_options)
-uh = problem.solve()
+#############
+# NonlinearProblem
+#############
+
+w = Function(V)
+w_ = ufl.TestFunction(V)
+x = ufl.SpatialCoordinate(msh)
+
+F = poisson_weak_form(w, w_, f, -1.0) - inner(g, w_) * ds
+
+problem = NonlinearProblem(F, w, bcs)
+solver = NewtonSolver(MPI.COMM_WORLD, problem)
+
+solver.convergence_criterion = "incremental" # 'residual'
+solver.rtol = 1e-6
+
+solver.report = True
+solver.error_on_nonconvergence = False
+
+ksp  = solver.krylov_solver
+opts = PETSc.Options()
+pfx  = ksp.getOptionsPrefix()
+
+opts[f"{pfx}ksp_type"] = "gmres" # "cg", "bicgstab"
+opts[f"{pfx}pc_type"]  = "sor"   # "lu"
+
+opts[f"{pfx}pc_factor_mat_solver_type"]  = "mumps"
+
+ksp.setFromOptions()
+
+niters, converged = solver.solve(w)
+#############
 
 # saving and visualization
 file = io.XDMFFile(msh.comm, "out_poisson/poisson.xdmf", "w")
 file.write_mesh(msh)
-file.write_function(uh)
+file.write_function(w)
 file.close()
-
-#cells, types, x = plot.create_vtk_mesh(V)
-#grid = pyvista.UnstructuredGrid(cells, types, x)
-#grid.point_data["u"] = uh.x.array.real
-#grid.set_active_scalars("u")
-#
-#plotter = pyvista.Plotter()
-#plotter.add_mesh(grid, show_edges = True)
-#warped = grid.warp_by_scalar()
-#plotter.add_mesh(warped)
-#plotter.show()
 #

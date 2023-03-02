@@ -3,7 +3,7 @@ import numpy as np
 
 import ufl
 from ufl import ds, dx, grad, inner, dot
-from ufl import sin, cos, tan, exp
+from ufl import sin, cos, tan, exp, pi
 
 import dolfinx
 from dolfinx import fem, io, mesh, plot
@@ -15,91 +15,6 @@ from petsc4py.PETSc import ScalarType
 # Initial Conditions
 #######################################################################
 """
-class InitialConditionsBench1(UserExpression):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.c0 = args[0]
-        self.epsilon = args[1]
-    def eval(self, values, x):
-        # indices
-        # c, mu
-        # 0,  1
-
-        values[0] = self.c0 + self.epsilon*(np.cos(0.105*x[0])*np.cos(0.11*x[1])
-                +(np.cos(0.13*x[0])*np.cos(0.087*x[1]))**2
-                + np.cos(0.025*x[0] - 0.15*x[1])*np.cos(0.07*x[0] - 0.02*x[1]))
-        values[1] = 0.0
-
-    def value_shape(self):
-        return (2,)
-
-class ICB2_jank1(UserExpression):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.c0 = args[0]
-        self.epsilon = args[1]
-        self.epsilon_eta = args[2]
-        self.psi = args[3]
-    def eval(self, values, x):
-        # indices
-        # c, mu, eta<1:4>,
-        # 0,  1,      3:6,
-
-        values[0] = self.c0 + self.epsilon*(np.cos(0.105*x[0])*np.cos(0.11*x[1])
-                +(np.cos(0.13*x[0])*np.cos(0.087*x[1]))**2
-                + np.cos(0.025*x[0] - 0.15*x[1])*np.cos(0.07*x[0] - 0.02*x[1]))
-        values[1] = 0.0
-
-        for i in range(1):
-            ii = i + 1.0
-            epsilon_eta = self.epsilon_eta
-            psi = self.psi
-            values[2+i] = epsilon_eta * (
-                    np.cos((0.01*ii)*x[0] - 4.0) * np.cos((0.007+0.01*ii)*x[1]) +
-                    np.cos((0.11+0.01*ii)*x[0]) * np.cos((0.11+0.01*ii)*x[1]) +
-                    psi * (
-                        np.cos((0.046+0.001*ii)*x[0] - (0.0405+0.001*ii)*x[1]) *
-                        np.cos((0.031+0.001*ii)*x[0] - (0.004+0.001*ii)*x[1])
-                        )**2
-                    )**2
-
-    def value_shape(self):
-        return (3,)
-
-class ICB2_jank2(UserExpression):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.c0 = args[0]
-        self.epsilon = args[1]
-        self.epsilon_eta = args[2]
-        self.psi = args[3]
-    def eval(self, values, x):
-        # indices
-        # c, mu, eta<1:4>,
-        # 0,  1,      3:6,
-
-        values[0] = self.c0 + self.epsilon*(np.cos(0.105*x[0])*np.cos(0.11*x[1])
-                +(np.cos(0.13*x[0])*np.cos(0.087*x[1]))**2
-                + np.cos(0.025*x[0] - 0.15*x[1])*np.cos(0.07*x[0] - 0.02*x[1]))
-        values[1] = 0.0
-
-        for i in range(2):
-            ii = i + 1.0
-            epsilon_eta = self.epsilon_eta
-            psi = self.psi
-            values[2+i] = epsilon_eta * (
-                    np.cos((0.01*ii)*x[0] - 4.0) * np.cos((0.007+0.01*ii)*x[1]) +
-                    np.cos((0.11+0.01*ii)*x[0]) * np.cos((0.11+0.01*ii)*x[1]) +
-                    psi * (
-                        np.cos((0.046+0.001*ii)*x[0] - (0.0405+0.001*ii)*x[1]) *
-                        np.cos((0.031+0.001*ii)*x[0] - (0.004+0.001*ii)*x[1])
-                        )**2
-                    )**2
-
-
-    def value_shape(self):
-        return (4,)
-
 class InitialConditionsBench2(UserExpression):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -203,9 +118,11 @@ class LangevinNoise(UserExpression):
 # with default values
 def time_loop(w, w0, dt, dt_min):
     return w
+
 #######################################################################
 # weak forms
 #######################################################################
+
 def cahn_hilliard_weak_form(c, mu, c_, mu_, c0, dt, M, kappa, dfdc):
 
     # """

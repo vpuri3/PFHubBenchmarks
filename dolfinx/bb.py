@@ -29,30 +29,20 @@ u_bc.x.array[:] = 1.0
 u.x.array[:] = 0.9
 
 """
- Newton Solve
-"""
-
-problem = nlsolvers.NewtonPDEProblem(F, u, bcs)
-
-solver = dolfinx.cpp.nls.petsc.NewtonSolver(MPI.COMM_WORLD)
-solver.setF(problem.F, problem.vector())
-solver.setJ(problem.J, problem.matrix())
-solver.set_form(problem.form)
-n, converged = solver.solve(u.vector)
-
-print("Converged = ", converged, " in ", n, " iterations.")
-
-"""
  SNES
 """
-
-u.x.array[:] = 1.0
 
 problem = nlsolvers.SnesPDEProblem(F, u, bcs)
 
 snes = PETSc.SNES().create()
 snes.setFunction(problem.F, problem.vector())
 snes.setJacobian(problem.J, problem.matrix())
+
+opts = PETSc.Options()
+opts['snes_linesearch_type'] = 'basic'
+opts['snes_monitor'] = None
+opts['snes_linesearch_monitor'] = None
+snes.setFromOptions()
 
 snes.setTolerances(rtol = 1e-9, max_it = 10)
 ksp = snes.getKSP()
@@ -63,8 +53,7 @@ pc = ksp.getPC()
 pc.setType("lu")
 
 snes.solve(None, u.vector)
-converged = snes.getConvergedReason()
-n = snes.getIterationNumber()
+niters, converged = snes.getIterationNumber(), snes.converged
 
-print("Converged = ", converged, " in ", n, " iterations.")
+print("Converged = ", converged, " in ", niters, " iterations.")
 #

@@ -1,11 +1,9 @@
 #
 import numpy as np
-import time
-import os
-import shutil
+import time, os, shutil
 
 import ufl
-from ufl import TestFunction, TrialFunction
+from ufl import TestFunction
 from ufl import ds, dx, grad, inner, dot, variable, diff, derivative
 from ufl import sin, cos, tan, log, exp, pi
 
@@ -18,7 +16,7 @@ from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
 # vis
-from dolfinx import io, plot
+#from dolfinx import io, plot
 
 # local
 from pfbase import *
@@ -53,7 +51,7 @@ msh = mesh.create_rectangle(comm = MPI.COMM_WORLD,
 
 ###################################
 # Model Setup - need
-#   dt, w, w0, F, J, bcs
+#   t, dt, w, w0, F, bcs
 ###################################
 
 t  = Constant(msh, 0.0)
@@ -74,12 +72,10 @@ x  = ufl.SpatialCoordinate(msh)
 w  = Function(W)
 w0 = Function(W)
 w_ = TestFunction(W)
-dw = TrialFunction(W)
 
 c , mu  = w.sub(0),  w.sub(1)
 c0, mu0 = w0.sub(0), w0.sub(1)
 c_, mu_ = w_
-dc, dmu = dw
 
 # Initial conditions
 ic_c0 = 0.5
@@ -111,74 +107,44 @@ dfdc = diff(f_chem, _c)
 F = cahn_hilliard_weak_form(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
 #F = diffusion_weak_form()
 
-J = derivative(F, w, dw)
 bcs = [] # noflux bc
 
 ###################################
 # Solver setup
 ###################################
 
-"""
- Newton Solver
-"""
-problem = nlsolvers.NewtonPDEProblem(F, w, bcs)
-solver = dolfinx.cpp.nls.petsc.NewtonSolver(MPI.COMM_WORLD)
-solver.setF(problem.F, problem.vector())
-solver.setJ(problem.J, problem.matrix())
-solver.set_form(problem.form)
-
-solver.convergence_criterion = "residual" # "residual", "incremental"
-solver.rtol = 1e-6
-
-solver.report = True
-solver.error_on_nonconvergence = False
-solver.max_it = 20
-#solver.relaxation_parameter = 1.0 # default 1.0
-
-ksp  = solver.krylov_solver
-opts = PETSc.Options()
-ksp_pfx  = ksp.getOptionsPrefix()
-
-opts[f"{ksp_pfx}ksp_type"] = "gmres" # "gmres", "cg", "bicgstab", "minres", "lu"
-opts[f"{ksp_pfx}pc_type"]  = "sor"   # "none", "lu", "sor", "petsc_amg", "hypre_amg"
-
-opts[f"{ksp_pfx}pc_factor_mat_solver_type"]  = "mumps"
-opts[f"{ksp_pfx}ksp_max_it"]  = int(Nx * Ny / 10)
-
-ksp.setFromOptions()
-
-pc = ksp.getPC()
-pc.setFactorSolverType("soluerlu_dist")
-
-#nlparams['line_search'] = 'bt' # "cp", "basic", "nleqerr", "l2"
-#nlparams['krylov_solver']['maximum_iterations'] = 1000
-##nlparams['krylov_solver']['monitor_convergence'] = True
-
-"""
- SNES Solver
-"""
-
 problem = nlsolvers.SnesPDEProblem(F, w, bcs)
 
 solver = PETSc.SNES().create()
 solver.setFunction(problem.F, problem.vector())
+#solver.setObjective(problem.F) # needed for line search ??
 solver.setJacobian(problem.J, problem.matrix())
 
-solver.setTolerances(rtol = 1e-6, max_it = 20)
+solver.setTolerances(rtol = 1e-6, atol = 1e-6, max_it = 20)
 
 opts = PETSc.Options()
+
 snes_pfx = solver.prefix
-opts[f"{snes_pfx}snes_linesearch_type"] = "bt"
-opts[f"{snes_pfx}snes_monitor"] = True
+opts[f"{snes_pfx}snes_linesearch_type"] = "basic" # "bt" "cp" "basic" "nleqerr" "l2"
+opts[f"{snes_pfx}snes_monitor"] = None
+opts[f"{snes_pfx}snes_linesearch_monitor"] = None
 
 solver.setFromOptions()
 
 ksp = solver.getKSP()
+ksp_pfx = ksp.prefix
+#opts[f"{ksp_pfx}ksp_monitor"] = True
 ksp.setType("gmres") # "gmres", "cg", "bicgstab", "minres", "lu"
-ksp.setTolerances(rtol = 1e-5, max_it = int(Nx * Ny / 10))
+ksp.setTolerances(rtol = 1e-6, max_it = int(Nx * Ny / 10))
 
 pc = ksp.getPC()
-pc.setType("sor")   # "none", "lu", "sor", "petsc_amg", "hypre_amg"
+pc.setType("sor") # "none", "lu", "sor", "petsc_amg", "hypre_amg"
+
+#solver.report = True
+#solver.error_on_nonconvergence = False
+#solver.relaxation_parameter = 1.0 # default 1.0
+#solver.convergence_criterion = "residual" # "residual", "incremental"
+##nlparams['krylov_solver']['monitor_convergence'] = True
 
 ###################################
 # analysis setup
@@ -206,7 +172,7 @@ def total_free_energy(f_chem, kappa, c):
 tprev = 0.0
 
 benchmark_output = []
-end_time = Constant(msh, 1e3) # 1e6
+end_time = Constant(msh, 1e2) # 1e6
 iteration_count = 0
 dt_min = 1e-2
 dt.value = 1e-1
@@ -220,18 +186,15 @@ while float(t) < float(end_time):
     iteration_count += 1
     if MPI.COMM_WORLD.rank == 0:
         print(f'Iteration #{iteration_count}. Time: {float(t)}, dt: {float(dt)}')
-    else:
-        pass
 
     # set IC
     w0.interpolate(w)
 
     # solve
     t.value = tprev + float(dt)
-    #niters, converged = solver.solve(w.vector)
+
     solver.solve(None, w.vector)
-    converged = solver.getConvergedReason()
-    niters = solver.getIterationNumber()
+    niters, converged = solver.getIterationNumber(), solver.converged
 
     while not converged:
         if float(dt) < dt_min + 1E-8:
@@ -240,16 +203,14 @@ while float(t) < float(end_time):
             #postprocess()
             exit()
 
-        dt.value = max(0.5*float(dt), dt_min)
-        t.value = tprev + float(dt)
+        dt.value = max(0.5 * float(dt), dt_min)
+        t.value  = tprev + float(dt)
         w.interpolate(w0)
 
         if MPI.COMM_WORLD.rank == 0:
             print(f'REPEATING Iteration #{iteration_count}. Time: {float(t)}, dt: {float(dt)}')
-        #niters, converged = solver.solve(w.vector)
         solver.solve(None, w.vector)
-        converged = solver.getConvergedReason()
-        niters = solver.getIterationNumber()
+        niters, converged = solver.getIterationNumber(), solver.converged
 
     # Simple rule for adaptive timestepping
     if (niters < 10):
@@ -257,8 +218,8 @@ while float(t) < float(end_time):
     else:
         dt.value = max(0.5*float(dt), dt_min)
 
-    if MPI.COMM_WORLD.rank == 0:
-        print("Converged in ", niters, "Nonlinear iterations")
+    #if MPI.COMM_WORLD.rank == 0:
+        #print("Converged in ", niters, "SNES iterations")
 
     ############
     # Analysis
@@ -284,7 +245,7 @@ file.close()
 ####################################
 ## post process
 ####################################
-if df.MPI.rank(mesh.mpi_comm()) == 0:
+if MPI.rank(mesh.mpi_comm()) == 0:
     np.savetxt('out_bench1' + '_out.csv',
             np.array(benchmark_output),
             fmt='%1.10f',

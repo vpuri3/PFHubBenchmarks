@@ -132,3 +132,5 @@ dmypy.json
 *.pvd
 *.vtu
 *.pvtu
+*.h5
+*.xdmf

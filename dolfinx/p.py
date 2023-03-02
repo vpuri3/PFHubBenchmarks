@@ -9,9 +9,6 @@ import dolfinx
 from dolfinx import fem, io, mesh, plot
 from dolfinx.fem import Function, FunctionSpace, Constant
 
-from dolfinx.fem.petsc import LinearProblem, NonlinearProblem
-from dolfinx.nls.petsc import NewtonSolver
-
 from mpi4py import MPI
 from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
@@ -20,6 +17,7 @@ from petsc4py.PETSc import ScalarType
 
 # local
 from pfbase import *
+import nlsolvers
 
 """
 Solve Poisson equation
@@ -66,66 +64,59 @@ x = ufl.SpatialCoordinate(msh)
 f = 10 * exp(-((x[0]-0.5)**2 + (x[1] - 0.5)**2) / 0.02)
 g = sin(5 * x[0])
 
-#f = Constant(msh, 1.0)
-#g = Constant(msh, 0.0)
-
-#############
-# LinearProblem
-#############
-#u = ufl.TrialFunction(V)
-#v = ufl.TestFunction(V)
-#
-#a = inner(grad(u), grad(v)) * dx
-#L = inner(f, v) * dx + inner(g, v) * ds
-#
-## solve
-#petsc_options = {
-#    "ksp_type" : "gmres",
-#    "pc_type" : "sor",
-#    }
-#
-#problem = fem.petsc.LinearProblem(a, L, bcs = bcs, petsc_options = petsc_options)
-#uh = problem.solve()
-#############
-
-#############
-# NonlinearProblem
-#############
-
 w = Function(V)
 w_ = ufl.TestFunction(V)
 x = ufl.SpatialCoordinate(msh)
 
 F = poisson_weak_form(w, w_, f, -1.0) - inner(g, w_) * ds
 
+"""
+ Standard Newton Solve
+"""
+
+from dolfinx.fem.petsc import NonlinearProblem
+from dolfinx.nls.petsc import NewtonSolver
+
 problem = NonlinearProblem(F, w, bcs)
 solver = NewtonSolver(MPI.COMM_WORLD, problem)
-
-solver.convergence_criterion = "incremental" # 'residual'
 solver.rtol = 1e-6
 
-solver.report = True
-solver.error_on_nonconvergence = False
-
-ksp  = solver.krylov_solver
-opts = PETSc.Options()
-pfx  = ksp.getOptionsPrefix()
-
-opts[f"{pfx}ksp_type"] = "gmres" # "cg", "bicgstab"
-opts[f"{pfx}pc_type"]  = "sor"   # "lu"
-
-opts[f"{pfx}pc_factor_mat_solver_type"]  = "mumps"
-
-ksp.setFromOptions()
-
 niters, converged = solver.solve(w)
-#############
+print("Converged = ", converged, " in ", niters, " iterations.")
 
-# saving and visualization
-if os.path.exists("out_poisson"):
-    shutil.rmtree("out_poisson")
-file = io.XDMFFile(msh.comm, "out_poisson/poisson.xdmf", "w")
-file.write_mesh(msh)
-file.write_function(w)
-file.close()
+"""
+ Newton Solve
+"""
+w.x.array[:] = 1.0
+
+problem = nlsolvers.NewtonPDEProblem(F, w, bcs)
+
+solver = dolfinx.cpp.nls.petsc.NewtonSolver(MPI.COMM_WORLD)
+solver.setF(problem.F, problem.vector())
+solver.setJ(problem.J, problem.matrix())
+solver.set_form(problem.form)
+
+solver.rtol = 1e-6
+niters, converged = solver.solve(w.vector)
+print("Converged = ", converged, " in ", niters, " iterations.")
+
+"""
+ SNES
+"""
+w.x.array[:] = 1.0
+
+problem = nlsolvers.SnesPDEProblem(F, w, bcs)
+
+solver = PETSc.SNES().create()
+solver.setFunction(problem.F, problem.vector())
+solver.setJacobian(problem.J, problem.matrix())
+
+solver.setTolerances(rtol = 1e-6, max_it = 20)
+
+solver.solve(None, w.vector)
+converged = solver.getConvergedReason()
+niters = solver.getIterationNumber()
+
+print("Converged = ", converged, " in ", niters, " iterations.")
+
 #

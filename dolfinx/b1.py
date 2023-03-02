@@ -13,19 +13,16 @@ import dolfinx
 from dolfinx import fem, mesh
 from dolfinx.fem import form, Function, FunctionSpace, Constant
 
-# problems and solvers
-from dolfinx.fem.petsc import LinearProblem, NonlinearProblem
-from dolfinx.nls.petsc import NewtonSolver
-
 from mpi4py import MPI
 from petsc4py import PETSc
-from petsc4py.PETSc import ScalarType, SNES
+from petsc4py.PETSc import ScalarType
 
 # vis
 from dolfinx import io, plot
 
 # local
 from pfbase import *
+import nlsolvers
 
 """
 Solve Cahn-Hilliard Equation
@@ -118,20 +115,17 @@ J = derivative(F, w, dw)
 bcs = [] # noflux bc
 
 ###################################
-# Nonlinear solver setup
+# Solver setup
 ###################################
 
 """
- Standard Newton Solve
+ Newton Solver
 """
-problem = NonlinearProblem(F, w, bcs)#, J = J)
-solver = NewtonSolver(MPI.COMM_WORLD, problem)
-
-# https://fenicsproject.discourse.group/t/snes-solver-fails-when-using-the-line-search-in-fenicsx/7505/9
-# https://github.com/FEniCS/dolfinx/blob/18a57210eb78705bce2accc153a0a73c69dc75c5/python/test/unit/nls/test_newton.py#L154
-#sn = SNES().create()
-#sn.setFunction(F)
-#sn.setJacobian(J, )
+problem = nlsolvers.NewtonPDEProblem(F, w, bcs)
+solver = dolfinx.cpp.nls.petsc.NewtonSolver(MPI.COMM_WORLD)
+solver.setF(problem.F, problem.vector())
+solver.setJ(problem.J, problem.matrix())
+solver.set_form(problem.form)
 
 solver.convergence_criterion = "residual" # "residual", "incremental"
 solver.rtol = 1e-6
@@ -156,30 +150,42 @@ ksp.setFromOptions()
 pc = ksp.getPC()
 pc.setFactorSolverType("soluerlu_dist")
 
-# KSP Initial Guess (?)
-#ksp.setInitialGuessNonzero(True)
-#ksp.setInitialGuessKnoll(True)
-
 #nlparams['line_search'] = 'bt' # "cp", "basic", "nleqerr", "l2"
 #nlparams['krylov_solver']['maximum_iterations'] = 1000
 ##nlparams['krylov_solver']['monitor_convergence'] = True
-#
 
 """
- NonlinearPDEProblem
+ SNES Solver
 """
-problem = NonlinearPDEProblem(F, w, bcs)
-solver = dolfinx.cpp.nls.petsc.NewtonSolver(MPI.COMM_WORLD)
-solver.setF(problem.F, problem.vector())
-solver.setJ(problem.J, problem.matrix())
-solver.set_form(problem.form)
-niters, converged = solver.solve(w.vector)
+
+problem = nlsolvers.SnesPDEProblem(F, w, bcs)
+
+solver = PETSc.SNES().create()
+solver.setFunction(problem.F, problem.vector())
+solver.setJacobian(problem.J, problem.matrix())
+
+solver.setTolerances(rtol = 1e-6, max_it = 20)
+
+opts = PETSc.Options()
+snes_pfx = solver.prefix
+opts[f"{snes_pfx}snes_linesearch_type"] = "bt"
+opts[f"{snes_pfx}snes_monitor"] = True
+
+solver.setFromOptions()
+
+ksp = solver.getKSP()
+ksp.setType("gmres") # "gmres", "cg", "bicgstab", "minres", "lu"
+ksp.setTolerances(rtol = 1e-5, max_it = int(Nx * Ny / 10))
+
+pc = ksp.getPC()
+pc.setType("sor")   # "none", "lu", "sor", "petsc_amg", "hypre_amg"
 
 ###################################
 # analysis setup
 ###################################
 if os.path.exists("out_bench1"):
-    shutil.rmtree("out_bench1")
+    if MPI.COMM_WORLD.rank == 0:
+        shutil.rmtree("out_bench1")
 file = io.XDMFFile(MPI.COMM_WORLD, "out_bench1/bench1.xdmf", "w")
 file.write_mesh(msh)
 
@@ -222,7 +228,10 @@ while float(t) < float(end_time):
 
     # solve
     t.value = tprev + float(dt)
-    niters, converged = solver.solve(w)
+    #niters, converged = solver.solve(w.vector)
+    solver.solve(None, w.vector)
+    converged = solver.getConvergedReason()
+    niters = solver.getIterationNumber()
 
     while not converged:
         if float(dt) < dt_min + 1E-8:
@@ -237,7 +246,10 @@ while float(t) < float(end_time):
 
         if MPI.COMM_WORLD.rank == 0:
             print(f'REPEATING Iteration #{iteration_count}. Time: {float(t)}, dt: {float(dt)}')
-        niters, converged = solver.solve(w)
+        #niters, converged = solver.solve(w.vector)
+        solver.solve(None, w.vector)
+        converged = solver.getConvergedReason()
+        niters = solver.getIterationNumber()
 
     # Simple rule for adaptive timestepping
     if (niters < 10):
@@ -246,7 +258,7 @@ while float(t) < float(end_time):
         dt.value = max(0.5*float(dt), dt_min)
 
     if MPI.COMM_WORLD.rank == 0:
-        print("Converged in ", niters, "Newton iterations")
+        print("Converged in ", niters, "Nonlinear iterations")
 
     ############
     # Analysis

@@ -16,11 +16,11 @@ from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
 # vis
-#from dolfinx import io, plot
+from dolfinx import io, plot
 
 # local
 from pfbase import *
-import nlsolvers
+import problem_types
 
 """
 Solve Cahn-Hilliard Equation
@@ -110,17 +110,20 @@ F = cahn_hilliard_weak_form(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
 bcs = [] # noflux bc
 
 ###################################
-# Solver setup
+# Nonlinear solver setup
 ###################################
 
-problem = nlsolvers.SnesPDEProblem(F, w, bcs)
+problem = problem_types.SnesPDEProblem(F, w, bcs)
 
 solver = PETSc.SNES().create()
+#solver.setType("vinewtonrsls")
 solver.setFunction(problem.F, problem.vector())
 #solver.setObjective(problem.F) # needed for line search ??
 solver.setJacobian(problem.J, problem.matrix())
-
 solver.setTolerances(rtol = 1e-6, atol = 1e-6, max_it = 20)
+
+# KSP  opts: https://petsc.org/release/docs/manualpages/KSP/KSPType/
+# SNES opts: https://petsc.org/release/docs/manualpages/SNES/SNESLineSearchType/
 
 opts = PETSc.Options()
 
@@ -132,10 +135,14 @@ opts[f"{snes_pfx}snes_linesearch_monitor"] = None
 solver.setFromOptions()
 
 ksp = solver.getKSP()
+
 ksp_pfx = ksp.prefix
-#opts[f"{ksp_pfx}ksp_monitor"] = True
-ksp.setType("gmres") # "gmres", "cg", "bicgstab", "minres", "lu"
+opts[f"{ksp_pfx}ksp_monitor"] = None
+opts[f"{ksp_pfx}ksp_type"] = "gmres" # "gmres", "cg", "bicgstab", "minres"
+opts[f"{ksp_pfx}pc_type"]  = "sor"
 ksp.setTolerances(rtol = 1e-6, max_it = int(Nx * Ny / 10))
+
+ksp.setFromOptions()
 
 pc = ksp.getPC()
 pc.setType("sor") # "none", "lu", "sor", "petsc_amg", "hypre_amg"
@@ -158,12 +165,14 @@ file.write_mesh(msh)
 file.write_function(c, t)
 
 def total_solute(c):
-    val = c * dx
-    return fem.assemble_scalar(form(val))
+    frm = c * dx
+    val = fem.assemble_scalar(form(frm))
+    return MPI.COMM_WORLD.allreduce(val, op=MPI.SUM)
 
 def total_free_energy(f_chem, kappa, c):
-    val = f_chem*dx + kappa/2.0*inner(grad(c), grad(c))*dx
-    return fem.assemble_scalar(form(val))
+    frm = f_chem * dx + kappa / 2.0 * inner(grad(c), grad(c)) * dx
+    val = fem.assemble_scalar(form(frm))
+    return MPI.COMM_WORLD.allreduce(val, op=MPI.SUM)
 
 ###################################
 # time integration
@@ -172,7 +181,7 @@ def total_free_energy(f_chem, kappa, c):
 tprev = 0.0
 
 benchmark_output = []
-end_time = Constant(msh, 1e2) # 1e6
+end_time = Constant(msh, 5e1) # 1e6
 iteration_count = 0
 dt_min = 1e-2
 dt.value = 1e-1
@@ -232,6 +241,9 @@ while float(t) < float(end_time):
     C_total = total_solute(c)
     benchmark_output.append([float(t), F_total, C_total])
 
+    if MPI.COMM_WORLD.rank == 0:
+        print("Total solute: ", C_total, "TFE, ", F_total)
+
 # end time loop
 
 t2 = time.time()
@@ -245,13 +257,12 @@ file.close()
 ####################################
 ## post process
 ####################################
-if MPI.rank(mesh.mpi_comm()) == 0:
-    np.savetxt('out_bench1' + '_out.csv',
+if MPI.COMM_WORLD.rank == 0:
+    np.savetxt('out_bench1/bench1' + '_out.csv',
             np.array(benchmark_output),
             fmt='%1.10f',
             header="time,total_free_energy,total_solute",
             delimiter=',',
             comments=''
             )
-else:
-    pass
+#

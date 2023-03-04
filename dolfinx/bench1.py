@@ -1,11 +1,9 @@
 #
 import numpy as np
-import time
-import os
-import shutil
+import time, os, shutil
 
 import ufl
-from ufl import TestFunction, TrialFunction
+from ufl import TestFunction
 from ufl import ds, dx, grad, inner, dot, variable, diff, derivative
 from ufl import sin, cos, tan, log, exp, pi
 
@@ -13,19 +11,16 @@ import dolfinx
 from dolfinx import fem, mesh
 from dolfinx.fem import form, Function, FunctionSpace, Constant
 
-# problems and solvers
-from dolfinx.fem.petsc import LinearProblem, NonlinearProblem
-from dolfinx.nls.petsc import NewtonSolver
-
 from mpi4py import MPI
 from petsc4py import PETSc
-from petsc4py.PETSc import ScalarType, SNES
+from petsc4py.PETSc import ScalarType
 
 # vis
 from dolfinx import io, plot
 
 # local
 from pfbase import *
+import problem_types
 
 """
 Solve Cahn-Hilliard Equation
@@ -77,12 +72,10 @@ x  = ufl.SpatialCoordinate(msh)
 w  = Function(W)
 w0 = Function(W)
 w_ = TestFunction(W)
-dw = TrialFunction(W)
 
 c , mu  = w.sub(0),  w.sub(1)
 c0, mu0 = w0.sub(0), w0.sub(1)
 c_, mu_ = w_
-dc, dmu = dw
 
 # Initial conditions
 ic_c0 = 0.5
@@ -114,24 +107,14 @@ dfdc = diff(f_chem, _c)
 F = cahn_hilliard_weak_form(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
 #F = diffusion_weak_form()
 
-J = derivative(F, w, dw)
 bcs = [] # noflux bc
 
 ###################################
 # Nonlinear solver setup
 ###################################
 
-"""
- Standard Newton Solve
-"""
-problem = NonlinearProblem(F, w, bcs)#, J = J)
-solver = NewtonSolver(MPI.COMM_WORLD, problem)
-
-# https://fenicsproject.discourse.group/t/snes-solver-fails-when-using-the-line-search-in-fenicsx/7505/9
-# https://github.com/FEniCS/dolfinx/blob/18a57210eb78705bce2accc153a0a73c69dc75c5/python/test/unit/nls/test_newton.py#L154
-#sn = SNES().create()
-#sn.setFunction(F)
-#sn.setJacobian(J, )
+problem = NonlinearProblem(F, w, bcs)
+solver = dolfinx.nls.petsc.NewtonSolver(MPI.COMM_WORLD, problem)
 
 solver.convergence_criterion = "residual" # "residual", "incremental"
 solver.rtol = 1e-6
@@ -145,10 +128,10 @@ ksp  = solver.krylov_solver
 opts = PETSc.Options()
 ksp_pfx  = ksp.getOptionsPrefix()
 
-opts[f"{ksp_pfx}ksp_type"] = "gmres" # "gmres", "cg", "bicgstab", "minres", "lu"
-opts[f"{ksp_pfx}pc_type"]  = "sor"   # "none", "lu", "sor", "petsc_amg", "hypre_amg"
+opts[f"{ksp_pfx}ksp_type"] = "gmres"
+opts[f"{ksp_pfx}pc_type"]  = "sor"
 
-opts[f"{ksp_pfx}pc_factor_mat_solver_type"]  = "mumps"
+#opts[f"{ksp_pfx}pc_factor_mat_solver_type"]  = "mumps"
 opts[f"{ksp_pfx}ksp_max_it"]  = int(Nx * Ny / 10)
 
 ksp.setFromOptions()
@@ -165,33 +148,26 @@ pc.setFactorSolverType("soluerlu_dist")
 ##nlparams['krylov_solver']['monitor_convergence'] = True
 #
 
-"""
- NonlinearPDEProblem
-"""
-problem = NonlinearPDEProblem(F, w, bcs)
-solver = dolfinx.cpp.nls.petsc.NewtonSolver(MPI.COMM_WORLD)
-solver.setF(problem.F, problem.vector())
-solver.setJ(problem.J, problem.matrix())
-solver.set_form(problem.form)
-niters, converged = solver.solve(w.vector)
-
 ###################################
 # analysis setup
 ###################################
 if os.path.exists("out_bench1"):
-    shutil.rmtree("out_bench1")
+    if MPI.COMM_WORLD.rank == 0:
+        shutil.rmtree("out_bench1")
 file = io.XDMFFile(MPI.COMM_WORLD, "out_bench1/bench1.xdmf", "w")
 file.write_mesh(msh)
 
 file.write_function(c, t)
 
 def total_solute(c):
-    val = c * dx
-    return fem.assemble_scalar(form(val))
+    frm = c * dx
+    val = fem.assemble_scalar(form(frm))
+    return MPI.COMM_WORLD.allreduce(val, op=MPI.SUM)
 
 def total_free_energy(f_chem, kappa, c):
-    val = f_chem*dx + kappa/2.0*inner(grad(c), grad(c))*dx
-    return fem.assemble_scalar(form(val))
+    frm = f_chem * dx + kappa / 2.0 * inner(grad(c), grad(c)) * dx
+    val = fem.assemble_scalar(form(frm))
+    return MPI.COMM_WORLD.allreduce(val, op=MPI.SUM)
 
 ###################################
 # time integration

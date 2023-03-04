@@ -1,5 +1,6 @@
 #
 import numpy as np
+import time, os, shutil
 
 import ufl
 from ufl import ds, dx, grad, inner, dot, variable, diff, derivative
@@ -19,7 +20,7 @@ from petsc4py.PETSc import ScalarType
 #import pyvista
 
 # local
-from pfbase import *
+import pfbase
 
 """
 Solve Poisson equation
@@ -96,7 +97,7 @@ w = Function(V)
 w_ = ufl.TestFunction(V)
 x = ufl.SpatialCoordinate(msh)
 
-F = poisson_weak_form(w, w_, f, -1.0) - inner(g, w_) * ds
+F = pfbase.poisson_WF(w, w_, f, -1.0) - inner(g, w_) * ds
 
 problem = NonlinearProblem(F, w, bcs)
 solver = NewtonSolver(MPI.COMM_WORLD, problem)
@@ -123,7 +124,8 @@ niters, converged = solver.solve(w)
 
 # saving and visualization
 if os.path.exists("out_poisson"):
-    shutil.rmtree("out_poisson")
+    if MPI.COMM_WORLD.rank == 0:
+        shutil.rmtree("out_poisson")
 file = io.XDMFFile(msh.comm, "out_poisson/poisson.xdmf", "w")
 file.write_mesh(msh)
 file.write_function(w)

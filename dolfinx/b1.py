@@ -19,8 +19,7 @@ from petsc4py.PETSc import ScalarType
 from dolfinx import io, plot
 
 # local
-from pfbase import *
-import problem_types
+import pfbase
 
 """
 Solve Cahn-Hilliard Equation

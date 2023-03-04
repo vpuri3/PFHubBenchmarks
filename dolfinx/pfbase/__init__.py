@@ -1,6 +1,6 @@
 #
 import os, sys
 
-from pfbase import weak_forms
-from pfbase import time_loop
-from pfbase import pde_problems
+from pfbase.weak_forms import *
+from pfbase.time_loop import *
+from pfbase.pde_problems import *

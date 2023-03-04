@@ -25,16 +25,20 @@ from petsc4py import PETSc
 # https://petsc.org/release/docs/manualpages/SNES/SNESLineSearchType/
 # https://petsc.org/release/docs/manual/ksp/#krylov-methods
 
-#######################################################################
-# Nonlinear PDE Problem for Newton Solver
-#######################################################################
+#=====================================================================#
+# Nonlinear PDE Problem Types
+#=====================================================================#
+
+###
+# dolfinx.NewtonSolver
+###
 
 class NewtonPDEProblem:
     """
-    Nonlinear problem class compatible with dolfinx.nls.petsc.NewtonSolver
+    Nonlinear problem class compatible with dolfinx.NewtonSolver
     """
 
-    def __init__(self, F, u, bcs):
+    def __init__(self, F, u, bcs = []):
         """
         This class set up structures for solving a nonlinear problem
         using Newton's method.
@@ -102,16 +106,16 @@ class NewtonPDEProblem:
     def vector(self):
         return create_vector(self.L)
 
-#######################################################################
-# Nonlinear PDE Problem for SNES solver
-#######################################################################
+###
+# PETSc.SNES
+###
 
 class SnesPDEProblem:
     """
     Nonlinear problem class compatible with PETSc.SNES solver
     """
 
-    def __init__(self, F, u, bcs):
+    def __init__(self, F, u, bcs = []):
         """
         This class set up structures for solving a nonlinear problem
         using Newton's method
@@ -180,7 +184,7 @@ class SnesPDEProblem:
         return create_vector(self.L)
         #return la.create_petsc_vector(V.dofmap.index_map, V.dofmap.index_map_bs)
 
-#######################################################################
+#=====================================================================#
 
 if __name__ == "__main__":
     import numpy as np

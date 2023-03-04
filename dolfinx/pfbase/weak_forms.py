@@ -4,26 +4,27 @@ import numpy as np
 import ufl
 from ufl import TestFunction
 from ufl import ds, dx, grad, inner, dot, variable, diff, derivative
-from ufl import sin, cos, tan, log, exp, pi
 
 import dolfinx
 from dolfinx.fem import form, Function, FunctionSpace, Constant
 from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
                                create_matrix, create_vector, set_bc)
 
-#######################################################################
-# time loop
-#######################################################################
-# use lambdas for postprocessing functions
-# with default values
-def time_loop(w, w0, dt, dt_min):
-    return w
+#=====================================================================#
+# misc
+#=====================================================================#
 
-#######################################################################
-# weak forms
-#######################################################################
+# order parameter interpolation function and derivative
+def h(u):
+    return u**3 * (6*u**2 - 15*u + 10)
 
-def cahn_hilliard_weak_form(c, mu, c_, mu_, c0, dt, M, kappa, dfdc):
+# only active in the interface region
+def dh(u):
+    return 3*u**2 * (6*u**2 - 15*u + 10) + u**3 * (12*u - 15)
+
+#=====================================================================#
+
+def cahn_hilliard_WF(c, mu, c_, mu_, c0, dt, M, kappa, dfdc):
 
     # """
     # d/dt c  = div(M * grad(\mu))
@@ -58,7 +59,7 @@ def allen_cahn_RHS_IBP(eta, eta_, L, kappa, dfdeta, f):
 
     return rhs
 
-def allen_cahn_weak_form(eta, eta_, eta0, dt, L, kappa, dfdeta, f):
+def allen_cahn_WF(eta, eta_, eta0, dt, L, kappa, dfdeta, f):
 
     # """
     # d/dt \eta  = -L * (F'(\eta) - \kappa * lapl(\eta)) + f
@@ -72,7 +73,7 @@ def allen_cahn_weak_form(eta, eta_, eta0, dt, L, kappa, dfdeta, f):
 
     return F_AC
 
-def poisson_weak_form(u, u_, f, M):
+def poisson_WF(u, u_, f, M):
 
     # """
     # div(M * grad(u)) = f
@@ -85,7 +86,7 @@ def poisson_weak_form(u, u_, f, M):
 
     return F
 
-def diffusion_weak_form_RHS(u, u_, L, D, f1, f2):
+def diffusion_WF_RHS(u, u_, L, D, f1, f2):
 
     # """
     # L * div(D * grad(u) + f1) + f2
@@ -96,7 +97,7 @@ def diffusion_weak_form_RHS(u, u_, L, D, f1, f2):
 
     return rhs
 
-def diffusion_weak_form(u, u_, u0, dt, L, D, f1, f2):
+def diffusion_WF(u, u_, u0, dt, L, D, f1, f2):
 
     # """
     # d/dt u = L * div(D * grad(u) + f1) + f2
@@ -111,7 +112,7 @@ def diffusion_weak_form(u, u_, u0, dt, L, D, f1, f2):
 
     return F
 
-def euler_bwd_weak_form(u, u_, u0, dt, f):
+def euler_bwd_WF(u, u_, u0, dt, f):
 
     # """
     # d/dt u = f
@@ -124,17 +125,5 @@ def euler_bwd_weak_form(u, u_, u0, dt, f):
 
     return F
 
-#######################################################################
-# misc
-#######################################################################
-
-# order parameter interpolation function and derivative
-def h(u):
-    return u**3 * (6*u**2 - 15*u + 10)
-
-# only active in the interface region
-def dh(u):
-    return 3*u**2 * (6*u**2 - 15*u + 10) + u**3 * (12*u - 15)
-
-#######################################################################
+#=====================================================================#
 #

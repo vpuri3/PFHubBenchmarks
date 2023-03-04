@@ -2,19 +2,14 @@
 import numpy as np
 
 import ufl
-from ufl import TestFunction, TrialFunction
+from ufl import TestFunction
 from ufl import ds, dx, grad, inner, dot, variable, diff, derivative
 from ufl import sin, cos, tan, log, exp, pi
 
 import dolfinx
-from dolfinx import fem, io, mesh, plot
 from dolfinx.fem import form, Function, FunctionSpace, Constant
 from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
                                create_matrix, create_vector, set_bc)
-
-from mpi4py import MPI
-from petsc4py import PETSc
-from petsc4py.PETSc import ScalarType
 
 #######################################################################
 # time loop

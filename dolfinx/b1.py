@@ -16,7 +16,7 @@ from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
 # vis
-from dolfinx import io, plot
+from dolfinx import io
 
 # local
 import pfbase
@@ -49,7 +49,7 @@ msh = mesh.create_rectangle(comm = MPI.COMM_WORLD,
                             )
 
 ###################################
-# Model Setup - need
+# Model Setup - return
 #   t, dt, w, w0, F, bcs
 ###################################
 
@@ -103,8 +103,7 @@ _c = variable(c)
 f_chem = rho_s * (_c - c_alpha)**2 * (c_beta - _c)**2
 dfdc = diff(f_chem, _c)
 
-F = cahn_hilliard_weak_form(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
-#F = diffusion_weak_form()
+F = pfbase.cahn_hilliard_WF(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
 
 bcs = [] # noflux bc
 
@@ -112,45 +111,33 @@ bcs = [] # noflux bc
 # Nonlinear solver setup
 ###################################
 
-problem = problem_types.SnesPDEProblem(F, w, bcs)
+problem = pfbase.SnesPDEProblem(F, w, bcs)
 
 solver = PETSc.SNES().create()
-#solver.setType("vinewtonrsls")
 solver.setFunction(problem.F, problem.vector())
-#solver.setObjective(problem.F) # needed for line search ??
 solver.setJacobian(problem.J, problem.matrix())
-solver.setTolerances(rtol = 1e-6, atol = 1e-6, max_it = 20)
+solver.setTolerances(atol = 1e-6, max_it = 20) # rtol=1e-6
 
 # KSP  opts: https://petsc.org/release/docs/manualpages/KSP/KSPType/
 # SNES opts: https://petsc.org/release/docs/manualpages/SNES/SNESLineSearchType/
 
 opts = PETSc.Options()
 
-snes_pfx = solver.prefix
-opts[f"{snes_pfx}snes_linesearch_type"] = "basic" # "bt" "cp" "basic" "nleqerr" "l2"
-opts[f"{snes_pfx}snes_monitor"] = None
-opts[f"{snes_pfx}snes_linesearch_monitor"] = None
-
-solver.setFromOptions()
+opts[f"snes_linesearch_type"] = "basic" # "bt" "cp" "basic" "nleqerr" "l2"
+opts[f"snes_monitor"] = None
+#opts[f"snes_converged_reason"] = None
+#opts[f"snes_view"] = None
+#opts[f"snes_linesearch_monitor"] = None
 
 ksp = solver.getKSP()
 
-ksp_pfx = ksp.prefix
-opts[f"{ksp_pfx}ksp_monitor"] = None
-opts[f"{ksp_pfx}ksp_type"] = "gmres" # "gmres", "cg", "bicgstab", "minres"
-opts[f"{ksp_pfx}pc_type"]  = "sor"
-ksp.setTolerances(rtol = 1e-6, max_it = int(Nx * Ny / 10))
+#opts[f"ksp_monitor"] = None
+opts[f"ksp_type"] = "gmres" # "gmres", "cg", "bicgstab", "minres"
+opts[f"pc_type"]  = "sor"
+ksp.setTolerances(atol = 1e-6, max_it = 1000)
 
-ksp.setFromOptions()
-
-pc = ksp.getPC()
-pc.setType("sor") # "none", "lu", "sor", "petsc_amg", "hypre_amg"
-
-#solver.report = True
-#solver.error_on_nonconvergence = False
-#solver.relaxation_parameter = 1.0 # default 1.0
-#solver.convergence_criterion = "residual" # "residual", "incremental"
-##nlparams['krylov_solver']['monitor_convergence'] = True
+#ksp.setFromOptions()
+solver.setFromOptions()
 
 ###################################
 # analysis setup
@@ -182,7 +169,7 @@ tprev = 0.0
 benchmark_output = []
 end_time = Constant(msh, 5e1) # 1e6
 iteration_count = 0
-dt_min = 1e-2
+dt_min = 1e-3
 dt.value = 1e-1
 
 t1 = time.time()
@@ -196,7 +183,7 @@ while float(t) < float(end_time):
         print(f'Iteration #{iteration_count}. Time: {float(t)}, dt: {float(dt)}')
 
     # set IC
-    w0.interpolate(w)
+    w0.vector.array[:] = w.vector.array[:]
 
     # solve
     t.value = tprev + float(dt)
@@ -213,7 +200,7 @@ while float(t) < float(end_time):
 
         dt.value = max(0.5 * float(dt), dt_min)
         t.value  = tprev + float(dt)
-        w.interpolate(w0)
+        w.vector.array[:] = w0.vector.array[:]
 
         if MPI.COMM_WORLD.rank == 0:
             print(f'REPEATING Iteration #{iteration_count}. Time: {float(t)}, dt: {float(dt)}')
@@ -226,8 +213,8 @@ while float(t) < float(end_time):
     else:
         dt.value = max(0.5*float(dt), dt_min)
 
-    #if MPI.COMM_WORLD.rank == 0:
-        #print("Converged in ", niters, "SNES iterations")
+    if MPI.COMM_WORLD.rank == 0:
+        print("Converged in ", niters, "Newton iterations")
 
     ############
     # Analysis
@@ -241,7 +228,7 @@ while float(t) < float(end_time):
     benchmark_output.append([float(t), F_total, C_total])
 
     if MPI.COMM_WORLD.rank == 0:
-        print("Total solute: ", C_total, "TFE, ", F_total)
+        print("C_total: ", C_total, "TFE, ", F_total)
 
 # end time loop
 

@@ -149,7 +149,7 @@ class SnesPDEProblem:
         # assign the vector to the function
         x.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                       mode=PETSc.ScatterMode.FORWARD)
-        x.copy(self.u.vector)
+        x.copy(self.u.vector) # u <- x
         self.u.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                                   mode=PETSc.ScatterMode.FORWARD)
 
@@ -190,9 +190,8 @@ if __name__ == "__main__":
     import numpy as np
     
     import ufl
-    from ufl import TestFunction
-    from ufl import dx, grad, inner
-    
+    from ufl import TestFunction, dx, grad, inner
+
     import dolfinx
     from dolfinx import fem, mesh
     from dolfinx.fem import form, Function, FunctionSpace, Constant
@@ -200,8 +199,6 @@ if __name__ == "__main__":
     from mpi4py import MPI
     from petsc4py import PETSc
     
-    import problem_types
-
     """ Problem Setup """
     
     msh = mesh.create_unit_square(MPI.COMM_WORLD, 12, 15)
@@ -209,39 +206,41 @@ if __name__ == "__main__":
     u = Function(V)
     v = TestFunction(V)
     F = inner(5.0, v) * dx - ufl.sqrt(u * u) * inner(grad(u), grad(v)) * dx - inner(u, v) * dx
-    
+
     u_bc = Function(V)
     u_bc.x.array[:] = 1.0
-    
+
     bc_cond = lambda x: np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], 1.0))
     dofs = fem.locate_dofs_geometrical(V, bc_cond)
     bc = fem.dirichletbc(u_bc, dofs)
-    
+
     bcs = [bc,]
-    
-    """ SNES Solver """
-    
+
+    """
+    SNES Solver
+    """
+
     u.x.array[:] = 0.9
-    
-    problem = problem_types.SnesPDEProblem(F, u, bcs)
-    
+
+    problem = SnesPDEProblem(F, u, bcs)
+
     snes = PETSc.SNES().create()
     snes.setFunction(problem.F, problem.vector())
     snes.setJacobian(problem.J, problem.matrix())
-    
+
     # KSP  opts: https://petsc.org/release/docs/manualpages/KSP/KSPType/
     # SNES opts: https://petsc.org/release/docs/manualpages/SNES/SNESLineSearchType/
-    
+
     snes.setTolerances(rtol = 1e-6, max_it = 10)
     ksp = snes.getKSP()
     ksp.setType("gmres")
     ksp.setTolerances(rtol = 1e-6, max_it = 100)
-    
+
     pc = ksp.getPC()
     pc.setType("sor")
-    
+
     opts = PETSc.Options()
-    
+
     snes_pfx = snes.prefix
     opts[f"{snes_pfx}snes_linesearch_type"] = "basic"
     opts[f"{snes_pfx}snes_monitor"] = None
@@ -255,7 +254,9 @@ if __name__ == "__main__":
     if MPI.COMM_WORLD.rank == 0:
         print("SNES solver converged = ", converged, " in ", niters, " iterations.")
     
-    """ Newton Solver """
+    """
+    Newton Solver
+    """
     
     u.x.array[:] = 0.9
     

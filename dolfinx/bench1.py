@@ -16,11 +16,10 @@ from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
 # vis
-from dolfinx import io, plot
+from dolfinx import io
 
 # local
-from pfbase import *
-import problem_types
+import pfbase
 
 """
 Solve Cahn-Hilliard Equation
@@ -50,8 +49,8 @@ msh = mesh.create_rectangle(comm = MPI.COMM_WORLD,
                             )
 
 ###################################
-# Model Setup - need
-#   dt, w, w0, F, J, bcs
+# Model Setup - return
+#   t, dt, w, w0, F, bcs
 ###################################
 
 t  = Constant(msh, 0.0)
@@ -104,8 +103,7 @@ _c = variable(c)
 f_chem = rho_s * (_c - c_alpha)**2 * (c_beta - _c)**2
 dfdc = diff(f_chem, _c)
 
-F = cahn_hilliard_weak_form(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
-#F = diffusion_weak_form()
+F = pfbase.cahn_hilliard_WF(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
 
 bcs = [] # noflux bc
 
@@ -113,11 +111,11 @@ bcs = [] # noflux bc
 # Nonlinear solver setup
 ###################################
 
-problem = NonlinearProblem(F, w, bcs)
+problem = pfbase.NonlinearProblem(F, w, bcs)
 solver = dolfinx.nls.petsc.NewtonSolver(MPI.COMM_WORLD, problem)
 
 solver.convergence_criterion = "residual" # "residual", "incremental"
-solver.rtol = 1e-6
+solver.atol = 1e-6
 
 solver.report = True
 solver.error_on_nonconvergence = False
@@ -129,24 +127,13 @@ opts = PETSc.Options()
 ksp_pfx  = ksp.getOptionsPrefix()
 
 opts[f"{ksp_pfx}ksp_type"] = "gmres"
+#opts[f"{ksp_pfx}ksp_gmres_restart"] = 100
 opts[f"{ksp_pfx}pc_type"]  = "sor"
 
-#opts[f"{ksp_pfx}pc_factor_mat_solver_type"]  = "mumps"
-opts[f"{ksp_pfx}ksp_max_it"]  = int(Nx * Ny / 10)
+opts[f"{ksp_pfx}ksp_max_it"]  = 1000
+#opts[f"{ksp_pfx}ksp_monitor"] = None
 
 ksp.setFromOptions()
-
-pc = ksp.getPC()
-pc.setFactorSolverType("soluerlu_dist")
-
-# KSP Initial Guess (?)
-#ksp.setInitialGuessNonzero(True)
-#ksp.setInitialGuessKnoll(True)
-
-#nlparams['line_search'] = 'bt' # "cp", "basic", "nleqerr", "l2"
-#nlparams['krylov_solver']['maximum_iterations'] = 1000
-##nlparams['krylov_solver']['monitor_convergence'] = True
-#
 
 ###################################
 # analysis setup
@@ -194,7 +181,7 @@ while float(t) < float(end_time):
         pass
 
     # set IC
-    w0.interpolate(w)
+    w0.vector.array[:] = w.vector.array[:]
 
     # solve
     t.value = tprev + float(dt)
@@ -209,7 +196,7 @@ while float(t) < float(end_time):
 
         dt.value = max(0.5*float(dt), dt_min)
         t.value = tprev + float(dt)
-        w.interpolate(w0)
+        w.vector[:] = w0.vector[:]
 
         if MPI.COMM_WORLD.rank == 0:
             print(f'REPEATING Iteration #{iteration_count}. Time: {float(t)}, dt: {float(dt)}')
@@ -234,6 +221,9 @@ while float(t) < float(end_time):
     F_total = total_free_energy(f_chem, kappa, c)
     C_total = total_solute(c)
     benchmark_output.append([float(t), F_total, C_total])
+
+    if MPI.COMM_WORLD.rank == 0:
+        print("C_total: ", C_total, "TFE, ", F_total)
 
 # end time loop
 

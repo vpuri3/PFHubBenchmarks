@@ -141,6 +141,7 @@ ksp.setFromOptions()
 if os.path.exists("out_bench1"):
     if MPI.COMM_WORLD.rank == 0:
         shutil.rmtree("out_bench1")
+
 file = io.XDMFFile(MPI.COMM_WORLD, "out_bench1/bench1.xdmf", "w")
 file.write_mesh(msh)
 
@@ -163,7 +164,7 @@ def total_free_energy(f_chem, kappa, c):
 tprev = 0.0
 
 benchmark_output = []
-end_time = Constant(msh, 1e3) # 1e6
+end_time = Constant(msh, 5e1) # 1e6
 iteration_count = 0
 dt_min = 1e-2
 dt.value = 1e-1

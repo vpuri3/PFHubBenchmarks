@@ -94,7 +94,7 @@ nlparams['maximum_iterations'] = 10
 nlparams['linear_solver'] = 'gmres'
 nlparams['preconditioner'] = 'sor'
 
-nlparams['krylov_solver']['maximum_iterations'] = 1000
+nlparams['krylov_solver']['maximum_iterations'] = int(Nx * Ny * Nz / 10)
 nlparams['krylov_solver']['error_on_nonconvergence'] = False
 #nlparams['krylov_solver']['monitor_convergence'] = True
 

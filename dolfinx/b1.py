@@ -44,8 +44,8 @@ Nx = Ny = 100
 
 msh = mesh.create_rectangle(comm = MPI.COMM_WORLD,
                             points = ((0.0, 0.0), (Lx, Ly)), n = (Nx, Ny),
-                            cell_type = mesh.CellType.triangle,
-                            #cell_type = mesh.CellType.quadrilateral,
+                            #cell_type = mesh.CellType.triangle,
+                            cell_type = mesh.CellType.quadrilateral,
                             #diagonal = mesh.DiagonalType.crossed
 
                             #ghost_mode = mesh.GhostMode.none
@@ -135,8 +135,6 @@ def cahn_hilliard(c, mu, c_, mu_, c0, dt, M, kappa, dfdc):
 
     return F
 
-#F = pfbase.cahn_hilliard_WF(c, mu, c_, mu_, c0, dt, M, kappa, dfdc)
-#F = pfbase.cahn_hilliard_WF(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
 F = cahn_hilliard(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
 
 bcs = [] # noflux bc
@@ -150,14 +148,14 @@ problem = pfbase.SnesPDEProblem(F, w, bcs)
 solver = PETSc.SNES().create()
 solver.setFunction(problem.F, problem.vector())
 solver.setJacobian(problem.J, problem.matrix())
-solver.setTolerances(atol = 1e-6, rtol = 1e-10, max_it = 20) # rtol=1e-6
+solver.setTolerances(atol = 1e-6, max_it = 20) # rtol=1e-6
 
 # KSP  opts: https://petsc.org/release/docs/manualpages/KSP/KSPType/
 # SNES opts: https://petsc.org/release/docs/manualpages/SNES/SNESLineSearchType/
 
 opts = PETSc.Options()
 
-opts[f"snes_linesearch_type"] = "basic" # "bt" "cp" "basic" "nleqerr" "l2"
+opts[f"snes_linesearch_type"] = "bt" # "bt" "cp" "basic" "nleqerr" "l2"
 opts[f"snes_converged_reason"] = None
 #opts[f"snes_view"] = None
 #opts[f"snes_monitor"] = None
@@ -167,8 +165,8 @@ ksp = solver.getKSP()
 
 #opts[f"ksp_monitor"] = None
 opts[f"ksp_type"] = "gmres" # "gmres", "cg", "bicgstab", "minres"
-opts[f"pc_type"]  = "sor"
-ksp.setTolerances(atol = 1e-6, rtol = 1e-10, max_it = int(Nx * Ny / 10))
+opts[f"pc_type"]  = "jacobi"
+ksp.setTolerances(max_it = int(Nx * Ny / 10))
 
 #ksp.setFromOptions()
 solver.setFromOptions()
@@ -176,15 +174,6 @@ solver.setFromOptions()
 ###################################
 # analysis setup
 ###################################
-if os.path.exists("out_bench1"):
-    if MPI.COMM_WORLD.rank == 0:
-        shutil.rmtree("out_bench1")
-
-file = io.XDMFFile(MPI.COMM_WORLD, "out_bench1/bench1.xdmf", "w")
-file.write_mesh(msh)
-
-file.write_function(c, t)
-
 def total_solute(c):
     frm = c * dx
     val = fem.assemble_scalar(form(frm))
@@ -201,7 +190,6 @@ def total_free_energy(f_chem, kappa, c):
 
 tprev = 0.0
 
-benchmark_output = []
 end_time = Constant(msh, 5e1) # 1e6
 iteration_count = 0
 dt_min = 1e-2
@@ -260,11 +248,8 @@ while float(t) < float(end_time):
     ############
     c, mu = w.sub(0), w.sub(1)
 
-    file.write_function(c, t)
-
     F_total = total_free_energy(f_chem, kappa, c)
     C_total = total_solute(c)
-    benchmark_output.append([float(t), F_total, C_total])
 
     if MPI.COMM_WORLD.rank == 0:
         print("C_total: ", C_total, "TFE, ", F_total)
@@ -275,19 +260,3 @@ t2 = time.time()
 spent_time = t2 - t1
 if MPI.COMM_WORLD.rank == 0:
     print(f'Time spent is {spent_time}')
-else:
-    pass
-
-file.close()
-####################################
-## post process
-####################################
-if MPI.COMM_WORLD.rank == 0:
-    np.savetxt('out_bench1/bench1' + '_out.csv',
-            np.array(benchmark_output),
-            fmt='%1.10f',
-            header="time,total_free_energy,total_solute",
-            delimiter=',',
-            comments=''
-            )
-#

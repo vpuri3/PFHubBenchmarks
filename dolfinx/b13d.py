@@ -13,7 +13,6 @@ from dolfinx.fem import form, Function, FunctionSpace, Constant
 
 from mpi4py import MPI
 from petsc4py import PETSc
-from petsc4py.PETSc import ScalarType
 
 # vis
 from dolfinx import io
@@ -47,14 +46,14 @@ Nx = 50
 Ny = 50
 Nz = 50
 
-msh = mesh.create_rectangle(comm = MPI.COMM_WORLD,
-                            points = ((0.0, 0.0), (Lx, Ly)), n = (Nx, Ny),
-                            cell_type = mesh.CellType.triangle,
-                            #cell_type = mesh.CellType.quadrilateral,
-                            #diagonal = mesh.DiagonalType.crossed
-
-                            #ghost_mode = mesh.GhostMode.none
-                            )
+#msh = mesh.create_rectangle(comm = MPI.COMM_WORLD,
+#                            points = ((0.0, 0.0), (Lx, Ly)), n = (Nx, Ny),
+#                            cell_type = mesh.CellType.triangle,
+#                            #cell_type = mesh.CellType.quadrilateral,
+#                            #diagonal = mesh.DiagonalType.crossed
+#
+#                            #ghost_mode = mesh.GhostMode.none
+#                            )
 
 msh = mesh.create_box(comm = MPI.COMM_WORLD,
                       points = ((0.0, 0.0, 0.0), (Lx, Ly, Lz)), n = (Nx, Ny, Nz),
@@ -83,8 +82,9 @@ ic_c0 = 0.5
 ic_epsilon = 0.05
 
 def ic_c(x, c0 = ic_c0, epsilon = ic_epsilon):
-    val = c0 + epsilon*(np.cos(0.105*x[0])*np.cos(0.11*x[1])
-        +(np.cos(0.13*x[0])*np.cos(0.087*x[1]))**2
+    val = c0 + epsilon*(
+          np.cos(0.105*x[0])*np.cos(0.11*x[1])
+        +(np.cos(0.13 *x[0])*np.cos(0.087*x[1]))**2
         + np.cos(0.025*x[0] - 0.15*x[1])*np.cos(0.07*x[0] - 0.02*x[1]))
 
     return val
@@ -145,8 +145,6 @@ def cahn_hilliard(c, mu, c_, mu_, c0, dt, M, kappa, dfdc):
 
     return F
 
-#F = pfbase.cahn_hilliard_WF(c, mu, c_, mu_, c0, dt, M, kappa, dfdc)
-#F = pfbase.cahn_hilliard_WF(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
 F = cahn_hilliard(w[0], w[1], w_[0], w_[1], w0[0], dt, M, kappa, dfdc)
 
 bcs = [] # noflux bc
@@ -155,33 +153,73 @@ bcs = [] # noflux bc
 # Nonlinear solver setup
 ###################################
 
-problem = pfbase.SnesPDEProblem(F, w, bcs)
-
-solver = PETSc.SNES().create()
-solver.setFunction(problem.F, problem.vector())
-solver.setJacobian(problem.J, problem.matrix())
-solver.setTolerances(atol = 1e-6, rtol = 1e-10, max_it = 20) # rtol=1e-6
+nl = "snes"
+#nl = "newton"
 
 # KSP  opts: https://petsc.org/release/docs/manualpages/KSP/KSPType/
-# SNES opts: https://petsc.org/release/docs/manualpages/SNES/SNESLineSearchType/
+# PC   opts: https://petsc.org/main/overview/linear_solve_table/
+# SNES opts: https://petsc.org/release/docs/manualpages/PC/PCType/
 
-opts = PETSc.Options()
+if nl == "snes":
+    problem = pfbase.SnesPDEProblem(F, w, bcs)
 
-opts[f"snes_linesearch_type"] = "basic" # "bt" "cp" "basic" "nleqerr" "l2"
-opts[f"snes_converged_reason"] = None
-#opts[f"snes_view"] = None
-#opts[f"snes_monitor"] = None
-#opts[f"snes_linesearch_monitor"] = None
+    snes = PETSc.SNES().create()
+    snes.setFunction(problem.F, problem.vector())
+    snes.setJacobian(problem.J, problem.matrix())
+    snes.setTolerances(atol = 1e-6, rtol = 1e-10, max_it = 20) # rtol=1e-6
 
-ksp = solver.getKSP()
+    opts = PETSc.Options()
 
-#opts[f"ksp_monitor"] = None
-opts[f"ksp_type"] = "gmres" # "gmres", "cg", "bicgstab", "minres"
-opts[f"pc_type"]  = "sor"
-ksp.setTolerances(atol = 1e-6, rtol = 1e-10, max_it = int(Nx * Ny / 10))
+    opts[f"snes_linesearch_type"] = "bt" # "bt" "cp" "basic" "nleqerr" "l2"
+    opts[f"snes_converged_reason"] = None
+    #opts[f"snes_view"] = None
+    opts[f"snes_monitor"] = None
+    #opts[f"snes_linesearch_monitor"] = None
 
-#ksp.setFromOptions()
-solver.setFromOptions()
+    ksp = snes.getKSP()
+
+    #opts[f"ksp_monitor"] = None
+    opts[f"ksp_type"] = "gmres" # "gmres", "cg", "bicgstab", "minres"
+    #opts[f"ksp_gmres_restart"] = 100
+    opts[f"pc_type"]  = "sor" # "sor", "gamg", "asm", "hypre", "jacobi", "bjacobi"
+    opts[f"pc_type"]  = "jacobi" # "gamg",
+    #ksp.setTolerances(atol = 1e-6, rtol = 1e-10, max_it = int(Nx * Ny * Nz / 10))
+    ksp.setTolerances(max_it = int(Nx * Ny * Nz / 10))
+    
+    #ksp.setFromOptions()
+    snes.setFromOptions()
+
+elif nl == "newton":
+    problem = pfbase.NewtonPDEProblem(F, w, bcs)
+    
+    newton = dolfinx.cpp.nls.petsc.NewtonSolver(MPI.COMM_WORLD)
+    newton.setF(problem.F, problem.vector())
+    newton.setJ(problem.J, problem.matrix())
+    newton.set_form(problem.form)
+    
+    #problem = NonlinearProblem(F, w, bcs)
+    #newton = NewtonSolver(MPI.COMM_WORLD, problem)
+
+    newton.report = True
+    newton.convergence_criterion = "residual" # "incremental" 'residual'
+    newton.error_on_nonconvergence = False
+    newton.max_it = 20
+    newton.atol = 1e-6
+    
+    opts = PETSc.Options()
+    
+    ksp = newton.krylov_solver
+    #ksp.setTolerances(atol = 1e-6, max_it = 1000)
+    ksp_pfx = ksp.getOptionsPrefix()
+    
+    opts[f"{ksp_pfx}ksp_type"] = "gmres"
+    #opts[f"{ksp_pfx}ksp_monitor"] = None
+    #opts[f"{ksp_pfx}ksp_gmres_restart"] = 100
+    opts[f"{ksp_pfx}pc_type"]  = "sor"
+    newton.relaxation_parameter = 1.0
+    opts[f"{ksp_pfx}pc_type"]  = "sor"
+    
+    ksp.setFromOptions()
 
 ###################################
 # analysis setup
@@ -212,7 +250,7 @@ def total_free_energy(f_chem, kappa, c):
 tprev = 0.0
 
 benchmark_output = []
-end_time = Constant(msh, 50.0) # 1e6
+end_time = Constant(msh, 1e2) # 1e6
 iteration_count = 0
 dt_min = 1e-2
 dt.value = 1e-1
@@ -234,9 +272,12 @@ while float(t) < float(end_time):
     # solve
     t.value = tprev + float(dt)
 
-    solver.solve(None, w.vector)
-    converged, niters = solver.converged, solver.getIterationNumber()
-    resid = solver.getFunctionNorm()
+    if nl == "snes":
+        snes.solve(None, w.vector)
+        converged, niters = snes.converged, snes.getIterationNumber()
+        resid = snes.getFunctionNorm()
+    elif nl == "newton":
+        niters, converged = newton.solve(w.vector)
 
     while not converged:
         if float(dt) < dt_min + 1E-8:
@@ -251,18 +292,21 @@ while float(t) < float(end_time):
 
         if MPI.COMM_WORLD.rank == 0:
             print(f'REPEATING Iteration #{iteration_count}. Time: {float(t)}, dt: {float(dt)}')
-        solver.solve(None, w.vector)
-        niters, converged = solver.getIterationNumber(), solver.converged
-        resid = solver.getFunctionNorm()
+        if nl == "snes":
+            snes.solve(None, w.vector)
+            niters, converged = snes.getIterationNumber(), snes.converged
+            resid = snes.getFunctionNorm()
+        elif nl == "newton":
+            niters, converged = newton.solve(w.vector)
 
     # assert residual is less than tolerance
-    if MPI.COMM_WORLD.rank == 0:
-        print("Residual: ", resid)
+    #if MPI.COMM_WORLD.rank == 0:
+        #print("Residual: ", resid)
 
     # Simple rule for adaptive timestepping
-    if (niters < 10):
+    if (niters < 5):
         dt.value = 2 * float(dt)
-    else:
+    elif (niters > 10):
         dt.value = max(0.5*float(dt), dt_min)
 
     ############

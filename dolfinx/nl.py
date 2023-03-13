@@ -139,7 +139,6 @@ opts[f"{ksp_pfx}ksp_type"] = "gmres"
 #opts[f"{ksp_pfx}ksp_gmres_restart"] = 100
 opts[f"{ksp_pfx}pc_type"]  = "sor"
 newton.relaxation_parameter = 1.0
-opts[f"{ksp_pfx}pc_type"]  = "sor"
 
 ksp.setFromOptions()
 

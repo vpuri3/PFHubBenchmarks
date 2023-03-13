@@ -5,8 +5,6 @@ import time
 
 from pfbase import *
 
-save_solution = True
-
 ###################################
 # Optimization options for the finite element form compiler
 ###################################
@@ -40,24 +38,35 @@ Pelem = P.ufl_element()
 W = df.FunctionSpace(mesh, df.MixedElement([Pelem, Pelem]))
 
 w  = df.Function(W)
-dw = df.TrialFunction(W)
+w0 = df.Function(W)
 w_ = df.TestFunction(W)
+dw = df.TrialFunction(W)
 
 # Initial conditions
-epsilon = 0.05
-c0 = 0.5
+class InitialConditionsBench1(df.UserExpression):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.c0 = args[0]
+        self.epsilon = args[1]
+    def eval(self, values, x):
+        # indices: (c, mu) - (0, 1)
 
-w0 = df.Function(W)
-w_ic = InitialConditionsBench1(c0, epsilon, degree=2)
-w0.interpolate(w_ic)
+        values[0] = self.c0 + self.epsilon*(np.cos(0.105*x[0])*np.cos(0.11*x[1])
+                +(np.cos(0.13*x[0])*np.cos(0.087*x[1]))**2
+                + np.cos(0.025*x[0] - 0.15*x[1])*np.cos(0.07*x[0] - 0.02*x[1]))
+        values[1] = 0.0
 
-w_ = df.TestFunction(W)
-dw = df.TrialFunction(W)
+    def value_shape(self):
+        return (2,)
+
+ic_epsilon = 0.05
+ic_c0 = 0.5
+w_init = InitialConditionsBench1(ic_c0, ic_epsilon, degree=2)
+w.interpolate(w_init)
+w0.interpolate(w_init)
 
 # Free Energy
 c , mu  = df.split(w)
-#c_, mu_ = df.split(w_)
-#c0, _  = df.split(w0)
 
 c = variable(c)
 f_chem = rho_s * (c - c_alpha)**2 * (c_beta - c)**2
@@ -97,10 +106,6 @@ nlparams['krylov_solver']['error_on_nonconvergence'] = False
 ###################################
 # analysis setup
 ###################################
-if save_solution:
-    filename = "results/bench1/conc"
-    cfile = df.File(filename + ".pvd", "compressed")
-
 def total_solute(c):
     return df.assemble(c * dx)
 
@@ -114,8 +119,7 @@ def total_free_energy(f_chem, kappa, c):
 # Ensure everything is reset
 t = df.Constant(0.0)
 tprev = 0.0
-w.interpolate(w_ic)
-w0.interpolate(w_ic)
+w.interpolate(w_init)
 
 benchmark_output = []
 end_time = df.Constant(1e3) # 1e6
@@ -171,10 +175,6 @@ while float(t) < float(end_time) + df.DOLFIN_EPS:
     ############
     c, _ = w.split()
 
-    if save_solution:
-        cfile << (c, t)
-        #cfile.write(c, float(t))
-
     F_total = total_free_energy(f_chem, kappa, c)
     C_total = total_solute(c)
     benchmark_output.append([float(t), F_total, C_total])
@@ -186,19 +186,5 @@ t2 = time.time()
 spent_time = t2 - t1
 if df.MPI.rank(mesh.mpi_comm()) == 0:
     print(f'Time spent is {spent_time}')
-else:
-    pass
-
-###################################
-# post process
-###################################
-if df.MPI.rank(mesh.mpi_comm()) == 0:
-    np.savetxt('results/bench1' + '_out.csv',
-            np.array(benchmark_output),
-            fmt='%1.10f',
-            header="time,total_free_energy,total_solute",
-            delimiter=',',
-            comments=''
-            )
 else:
     pass

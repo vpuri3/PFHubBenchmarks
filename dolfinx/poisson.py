@@ -17,8 +17,6 @@ from mpi4py import MPI
 from petsc4py import PETSc
 from petsc4py.PETSc import ScalarType
 
-#import pyvista
-
 # local
 import pfbase
 
@@ -47,28 +45,31 @@ msh = mesh.create_rectangle(comm = MPI.COMM_WORLD,
 V = fem.FunctionSpace(msh, ("Lagrange", 1))
 
 # boundary condition
-BC_dirichlet = lambda x: np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], Lx))
-BC_neumann   = lambda x: np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], Ly))
+bdry_x = lambda x: np.logical_or(np.isclose(x[0], 0.0), np.isclose(x[0], Lx))
+bdry_y = lambda x: np.logical_or(np.isclose(x[1], 0.0), np.isclose(x[1], Ly))
 
-facets_dirichlet = mesh.locate_entities_boundary(msh, dim = 1, marker = BC_dirichlet)
+facets_x = mesh.locate_entities_boundary(msh, dim = 1, marker = bdry_x)
+facets_y = mesh.locate_entities_boundary(msh, dim = 1, marker = bdry_y)
 
-dofs_dirichlet = fem.locate_dofs_topological(V = V, entity_dim = 1,
-                                             entities = facets_dirichlet)
+dofs_x = fem.locate_dofs_topological(V = V, entity_dim = 1, entities = facets_x)
+dofs_y = fem.locate_dofs_topological(V = V, entity_dim = 1, entities = facets_y)
 
-bc_dirichlet = fem.dirichletbc(value = ScalarType(0), dofs = dofs_dirichlet, V = V)
+bc_x = fem.dirichletbc(value = ScalarType(0), dofs = dofs_x, V = V)
+bc_y = fem.dirichletbc(value = ScalarType(0), dofs = dofs_y, V = V)
 
 bcs = [
-        bc_dirichlet,
+        bc_x,
+        bc_y,
        ]
 
 # equation
 x = ufl.SpatialCoordinate(msh)
 
-f = 10 * exp(-((x[0]-0.5)**2 + (x[1] - 0.5)**2) / 0.02)
-g = sin(5 * x[0])
+#f = 10 * exp(-((x[0]-0.5)**2 + (x[1] - 0.5)**2) / 0.02)
+#g = sin(5 * pi * x[0])
 
-#f = Constant(msh, 1.0)
-#g = Constant(msh, 0.0)
+f = Constant(msh, 1.0)
+g = Constant(msh, 0.0)
 
 #############
 # LinearProblem
@@ -114,8 +115,6 @@ pfx  = ksp.getOptionsPrefix()
 
 opts[f"{pfx}ksp_type"] = "gmres" # "cg", "bicgstab"
 opts[f"{pfx}pc_type"]  = "sor"   # "lu"
-
-opts[f"{pfx}pc_factor_mat_solver_type"]  = "mumps"
 
 ksp.setFromOptions()
 

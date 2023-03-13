@@ -200,6 +200,9 @@ while float(t) < float(end_time) + df.DOLFIN_EPS:
     C_total = total_solute(c)
     benchmark_output.append([float(t), F_total, C_total])
 
+    if df.MPI.rank(mesh.mpi_comm()) == 0:
+        print("C_total: ", C_total, "TFE: ", F_total)
+
 t2 = time.time()
 spent_time = t2 - t1
 if df.MPI.rank(mesh.mpi_comm()) == 0:

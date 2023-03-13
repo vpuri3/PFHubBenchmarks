@@ -1,7 +1,6 @@
 #
 import dolfin as df
 import numpy as np
-import matplotlib.pyplot as plt
 import time
 
 from pfbase import *
@@ -24,7 +23,7 @@ mesh = df.RectangleMesh(df.Point(0.0, 0.0), df.Point(Lx, Ly), Nx, Ny, 'crossed')
 
 ###################################
 # Model Setup - need
-#   dt, w_ic, w, w0, F, J, bcs
+#   dt, w, w0, F, J, bcs
 ###################################
 dt = df.Constant(1e-1)
 
@@ -38,7 +37,7 @@ M = df.Constant(5.0)
 # FEM setup
 P = df.FunctionSpace(mesh, 'P', 1)
 Pelem = P.ufl_element()
-W = df.FunctionSpace(mesh,  df.MixedElement([Pelem, Pelem]))
+W = df.FunctionSpace(mesh, df.MixedElement([Pelem, Pelem]))
 
 w  = df.Function(W)
 dw = df.TrialFunction(W)
@@ -76,12 +75,12 @@ df.set_log_level(df.LogLevel.ERROR)
 problem = df.NonlinearVariationalProblem(F, w, bcs, J)
 solver  = df.NonlinearVariationalSolver(problem)
 
-solver.parameters['nonlinear_solver'] = 'newton'
-nlparams = solver.parameters['newton_solver']
+#solver.parameters['nonlinear_solver'] = 'newton'
+#nlparams = solver.parameters['newton_solver']
 
-#solver.parameters['nonlinear_solver'] = 'snes'
-#nlparams = solver.parameters['snes_solver']
-#nlparams['line_search'] = 'basic'
+solver.parameters['nonlinear_solver'] = 'snes'
+nlparams = solver.parameters['snes_solver']
+nlparams['line_search'] = 'basic'
 
 nlparams['report'] = True
 nlparams['error_on_nonconvergence'] = False
@@ -179,6 +178,9 @@ while float(t) < float(end_time) + df.DOLFIN_EPS:
     F_total = total_free_energy(f_chem, kappa, c)
     C_total = total_solute(c)
     benchmark_output.append([float(t), F_total, C_total])
+
+    if df.MPI.rank(mesh.mpi_comm()) == 0:
+        print("C_total: ", C_total, "TFE: ", F_total)
 
 t2 = time.time()
 spent_time = t2 - t1

@@ -245,29 +245,29 @@ if __name__ == "__main__":
     opts[f"{snes_pfx}snes_linesearch_type"] = "basic"
     opts[f"{snes_pfx}snes_monitor"] = None
     opts[f"{snes_pfx}snes_linesearch_monitor"] = None
-    
+
     snes.setFromOptions()
-    
+
     snes.solve(None, u.vector)
     niters, converged = snes.getIterationNumber(), snes.converged
-    
+
     if MPI.COMM_WORLD.rank == 0:
         print("SNES solver converged = ", converged, " in ", niters, " iterations.")
-    
+
     """
     Newton Solver
     """
-    
+
     u.x.array[:] = 0.9
-    
-    problem = problem_types.NewtonPDEProblem(F, u, bcs)
-    
+
+    problem = NewtonPDEProblem(F, u, bcs)
+
     newton = dolfinx.cpp.nls.petsc.NewtonSolver(MPI.COMM_WORLD)
     newton.setF(problem.F, problem.vector())
     newton.setJ(problem.J, problem.matrix())
     newton.set_form(problem.form)
     n, converged = newton.solve(u.vector)
-    
+
     if MPI.COMM_WORLD.rank == 0:
         print("Newton solver converged = ", converged, " in ", n, " iterations.")
     #

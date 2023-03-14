@@ -7,7 +7,7 @@ Install FEniCS using Miniconda.
 ```bash
 conda create -n PF-env
 conda activate PF-env
-conda install -c conda-forge fenics dolfin-adjoint mpich pyvista matplotlib
+conda install -c conda-forge fenics dolfin-adjoint matplotlib
 ```
 Clone the code
 

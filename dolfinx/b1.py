@@ -35,17 +35,25 @@ f = 100 * c^2 * (1-c)^2
 lambda = 1e-2
 M = 1.0
 """
+###################################
+# Logging
+###################################
+
+from dolfinx.log import LogLevel, set_log_level, set_output_file
+
+dolfinx.log.set_log_level(LogLevel.WARNING) # INFO, WARNING
+dolfinx.log.set_output_file("out_b1.txt")
 
 ###################################
 # Mesh
 ###################################
-Lx = Ly = 200.0
+Lx = Ly = 100.0
 Nx = Ny = 100
 
 msh = mesh.create_rectangle(comm = MPI.COMM_WORLD,
                             points = ((0.0, 0.0), (Lx, Ly)), n = (Nx, Ny),
-                            #cell_type = mesh.CellType.triangle,
-                            cell_type = mesh.CellType.quadrilateral,
+                            cell_type = mesh.CellType.triangle,
+                            #cell_type = mesh.CellType.quadrilateral,
                             #diagonal = mesh.DiagonalType.crossed
 
                             #ghost_mode = mesh.GhostMode.none

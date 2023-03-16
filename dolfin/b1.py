@@ -112,6 +112,11 @@ def total_solute(c):
 def total_free_energy(f_chem, kappa, c):
     return df.assemble(f_chem*dx + kappa/2.0*inner(grad(c), grad(c))*dx)
 
+filename = "out_b1"
+file = HDF5File(MPI.comm_world, filename + ".h5", "w")
+file.write(mesh, "mesh")
+tsave = []
+
 ###################################
 # time integration
 ###################################
@@ -120,6 +125,12 @@ def total_free_energy(f_chem, kappa, c):
 t = df.Constant(0.0)
 tprev = 0.0
 w.interpolate(w_init)
+
+# save IC
+c, mu = w.sub(0), w.sub(1)
+file.write(c , "c" , float(t))
+file.write(mu, "mu", float(t))
+tsave.append(float(t))
 
 benchmark_output = []
 end_time = df.Constant(1e3) # 1e6
@@ -173,7 +184,7 @@ while float(t) < float(end_time) + df.DOLFIN_EPS:
     ############
     # Analysis
     ############
-    c, _ = w.split()
+    c, mu = w.sub(0), w.sub(1)
 
     F_total = total_free_energy(f_chem, kappa, c)
     C_total = total_solute(c)
@@ -182,9 +193,27 @@ while float(t) < float(end_time) + df.DOLFIN_EPS:
     if df.MPI.rank(mesh.mpi_comm()) == 0:
         print("C_total: ", C_total, "TFE: ", F_total)
 
+    # save solution
+    tt = time.time()
+    file.write(c , "c" , float(t))
+    file.write(mu, "mu", float(t))
+    tsave.append(float(t))
+    tt = time.time() - tt
+    if MPI.comm_world.rank == 0:
+        print("Time taken in saving is:", tt)
+
 t2 = time.time()
 spent_time = t2 - t1
+
 if df.MPI.rank(mesh.mpi_comm()) == 0:
     print(f'Time spent is {spent_time}')
-else:
-    pass
+
+if df.MPI.rank(mesh.mpi_comm()) == 0:
+    np.savetxt(filename + ".csv",
+               np.array(tsave),
+               fmt='%1.10f',
+               header="time",
+               delimiter=',',
+               comments=''
+              )
+#

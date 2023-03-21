@@ -20,7 +20,7 @@ def process_bench1(dirname):
     for i in range(Nt):
         c = Function(V)
 
-        hdf.read(c, f"xi/vector_{i}")
+        hdf.read(c, f"c/vector_{i}")
 
         cs.append(c)
 

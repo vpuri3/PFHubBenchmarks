@@ -208,7 +208,7 @@ else:
 # post process
 ###################################
 if df.MPI.rank(mesh.mpi_comm()) == 0:
-    np.savetxt('results/bench1' + '_out.csv',
+    np.savetxt('results/bench1/' + 'stats.csv',
             np.array(benchmark_output),
             fmt='%1.10f',
             header="time,total_free_energy,total_solute",

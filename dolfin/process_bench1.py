@@ -34,7 +34,7 @@ dirname = "./results/bench1/"
 mesh, cs = process_case(dirname)
 #mesh, ts, cs = process_case(dirname)
 
-file = File("c.pvd" , "compressed")
+file = File("./results/bench1/" + "c.pvd" , "compressed")
 file << mesh
 
 for i in range(ts.size):

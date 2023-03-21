@@ -1,14 +1,16 @@
 #
 from dolfin import *
 import numpy as np
+import pandas as pd
 
 import os, shutil
 
 def process_bench1(dirname):
     hdf = HDF5File(MPI.comm_world, dirname + "conc.h5", "r")
 
-    #ts = np.loadtxt(dirname + "stats.csv", skiprows=1)
-    #Nt = ts.size
+    stats = pd.read_csv(dirname + "stats.csv")
+    times = np.array(stats.time)
+    Nt = times.size
 
     mesh = Mesh()
     hdf.read(mesh, "mesh", True)
@@ -27,15 +29,15 @@ def process_bench1(dirname):
     if MPI.comm_world.rank == 0:
         print("done reading HDF5")
 
-    #return mesh, ts, cs
-    return mesh, cs
+    return mesh, times, cs, stats
 
 dirname = "./results/bench1/"
-mesh, cs = process_case(dirname)
-#mesh, ts, cs = process_case(dirname)
+mesh, times, cs, stats = process_bench1(dirname)
 
 file = File("./results/bench1/" + "c.pvd" , "compressed")
 file << mesh
 
-for i in range(ts.size):
+for i in range(times.size):
+    if MPI.comm_world.rank == 0:
+        print(f"writing step {i}")
     file << cs[i]

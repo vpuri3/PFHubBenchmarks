@@ -71,7 +71,7 @@ bcs = [] # noflux bc
 ###################################
 # Nonlinear solver setup
 ###################################
-df.set_log_level(df.LogLevel.ERROR)
+df.set_log_level(df.LogLevel.WARNING)
 
 problem = df.NonlinearVariationalProblem(F, w, bcs, J)
 solver  = df.NonlinearVariationalSolver(problem)
@@ -115,15 +115,8 @@ nlparams['krylov_solver']['maximum_iterations'] = 1000
 ###################################
 if save_solution:
     filename = "results/bench1/conc"
-    #cfile = df.XDMFFile(filename + ".xdmf")
-    #for f in [cfile, ]:
-    #    f.parameters['flush_output'] = True
-    #    f.parameters['rewrite_function_mesh'] = False
-
-    #cfile.write(w.sub(0), 0.0)
-
-    cfile = df.File(filename + ".pvd", "compressed")
-    #cfile << mesh
+    outfile = HDF5File(MPI.comm_world, filename + ".h5", "w")
+    outfile.write(mesh, "mesh")
 
 def total_solute(c):
     return df.assemble(c * dx)
@@ -155,7 +148,9 @@ while float(t) < float(end_time) + df.DOLFIN_EPS:
 
     iteration_count += 1
     if df.MPI.rank(mesh.mpi_comm()) == 0:
-        print(f'Iteration #{iteration_count}. Time: {float(t)}, dt: {float(dt)}')
+        df.warning(f"#================================#")
+        df.warning(f"Iteration #{iteration_count}. Time: {float(t)}, dt: {float(dt)}")
+        df.warning(f"#================================#")
     else:
         pass
 
@@ -169,7 +164,7 @@ while float(t) < float(end_time) + df.DOLFIN_EPS:
     while not converged:
         #if float(dt) < dt_min + 1E-8:
         #    if df.MPI.rank(mesh.mpi_comm()) == 0:
-        #        print("dt too small. exiting.")
+        #        df.warning(f"dt too small. exiting.")
         #    postprocess()
         #    exit()
 
@@ -178,7 +173,7 @@ while float(t) < float(end_time) + df.DOLFIN_EPS:
         w.assign(w0)
 
         if df.MPI.rank(mesh.mpi_comm()) == 0:
-            print(f'REPEATING Iteration #{iteration_count}. Time: {float(t)}, dt: {float(dt)}')
+            df.warning(f"REPEATING Iteration #{iteration_count}. Time: {float(t)}, dt: {float(dt)}")
         niters, converged = solver.solve()
 
     # Simple rule for adaptive timestepping
@@ -193,20 +188,19 @@ while float(t) < float(end_time) + df.DOLFIN_EPS:
     c, _ = w.split()
 
     if save_solution:
-        cfile << (c, t)
-        #cfile.write(c, float(t))
+        outfile.write(c , "c" , float(t))
 
     F_total = total_free_energy(f_chem, kappa, c)
     C_total = total_solute(c)
     benchmark_output.append([float(t), F_total, C_total])
 
     if df.MPI.rank(mesh.mpi_comm()) == 0:
-        print("C_total: ", C_total, "TFE: ", F_total)
+        df.warning(f"C_total: {C_total}, TFE: {F_total}")
 
 t2 = time.time()
 spent_time = t2 - t1
 if df.MPI.rank(mesh.mpi_comm()) == 0:
-    print(f'Time spent is {spent_time}')
+    warning(f"Time spent is {spent_time}")
 else:
     pass
 
